@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <style>
+      .bg { fill: #8FA888; }
+      .mark { fill: #FFFFFF; }
+      .bud { fill: #E7A08E; }
+    </style>
+  </defs>
+
+  <!-- Background: full bleed, no rounded corners (OS applies masking automatically) -->
+  <rect width="1024" height="1024" class="bg"/>
+
+  <!-- Signature mark: "すきまに芽吹く" - centered, generous safe margin -->
+  <g transform="translate(512,560)">
+    <!-- left block -->
+    <rect x="-260" y="-40" width="180" height="180" rx="34" class="mark" opacity="0.9"/>
+    <!-- right block -->
+    <rect x="80" y="-40" width="180" height="180" rx="34" class="mark" opacity="0.9"/>
+    <!-- stem rising from the gap -->
+    <path d="M -20 140 C -20 60 -46 0 -40 -90" fill="none" stroke="#FFFFFF" stroke-width="30" stroke-linecap="round"/>
+    <!-- leaves -->
+    <ellipse cx="10" cy="-140" rx="80" ry="42" class="mark" transform="rotate(-25 10 -140)"/>
+    <ellipse cx="-70" cy="-165" rx="80" ry="42" class="mark" transform="rotate(25 -70 -165)"/>
+    <!-- bud -->
+    <circle cx="-42" cy="-210" r="34" class="bud"/>
+  </g>
+</svg>

@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "スキかた",
+    "slug": "sukikata-timer-photo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#EDE7D6",
+    "icon": "./assets/icons/ios-1024.png",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.sukikata.timerphoto",
+      "adaptiveIcon": {
+        "backgroundColor": "#8FA888",
+        "foregroundImage": "./assets/icons/android-xxxhdpi-192.png"
+      }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "スキかたが、片付け前後の写真を撮るためにカメラを使用します。",
+          "microphonePermission": false
+        }
+      ],
+      "@react-native-community/datetimepicker",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/icons/ios-1024.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#8FA888"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "c11efed0-0759-4f7d-a117-7d77bd089eb0"
+      }
+    }
+  }
+}
