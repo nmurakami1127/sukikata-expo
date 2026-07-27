@@ -8,7 +8,8 @@
     "backgroundColor": "#EDE7D6",
     "icon": "./assets/icons/ios-1024.png",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sukikata.timerphoto"
     },
     "android": {
       "package": "com.sukikata.timerphoto",

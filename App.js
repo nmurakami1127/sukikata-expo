@@ -17,6 +17,8 @@ import Svg, { Circle } from "react-native-svg";
 import { NotificationSettingsScreen } from "./NotificationSettingsScreen";
 import { recordAppOpen } from "./storage";
 import { runDailyNotificationJob } from "./dailyJob";
+import { CATEGORIES } from "./taskData";
+import { pickTaskForCategory } from "./taskPicker";
 
 /* ---------- colors (spec section 5-1) ---------- */
 const C = {
@@ -34,12 +36,6 @@ const C = {
 };
 
 /* ---------- content (spec section 6) ---------- */
-const TASK = {
-  category: "机",
-  title: "机の上のゴミだけを捨てる",
-  note: "分別は考えず、明らかなゴミのみ",
-};
-
 const PRAISE = {
   complete: [
     "ここまでで、じゅうぶんです。",
@@ -205,6 +201,28 @@ function TimerRing({ progress, label, sublabel, pulse }) {
   );
 }
 
+function CategoryScreen({ onSelect, onSettingsPress }) {
+  return (
+    <View style={styles.flexCol}>
+      <Header title="場所を選ぶ" onSettingsPress={onSettingsPress} />
+      <Text style={styles.categoryIntro}>今いる場所から、5分だけ。</Text>
+      <View style={styles.categoryGrid}>
+        {CATEGORIES.map((c) => (
+          <TouchableOpacity
+            key={c.id}
+            style={styles.categoryCard}
+            onPress={() => onSelect(c)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.categoryDot} />
+            <Text style={styles.categoryCardText}>{c.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 function SproutBadge() {
   return (
     <View style={styles.sproutBadge}>
@@ -216,7 +234,9 @@ function SproutBadge() {
 /* ---------- app ---------- */
 
 export default function App() {
-  const [screen, setScreen] = useState("task");
+  const [screen, setScreen] = useState("category");
+  const [category, setCategory] = useState(null);
+  const [task, setTask] = useState(null);
   const [beforePhoto, setBeforePhoto] = useState(null);
   const [afterPhoto, setAfterPhoto] = useState(null);
   const [quickPhoto, setQuickPhoto] = useState(null);
@@ -256,7 +276,9 @@ export default function App() {
   }, [screen, phase, extraTime]);
 
   const resetAll = () => {
-    setScreen("task");
+    setScreen("category");
+    setCategory(null);
+    setTask(null);
     setBeforePhoto(null);
     setAfterPhoto(null);
     setQuickPhoto(null);
@@ -264,6 +286,19 @@ export default function App() {
     setExtraTime(0);
     setPhase("running");
     setFinishKind("complete");
+  };
+
+  const chooseCategory = async (c) => {
+    setCategory(c);
+    const t = await pickTaskForCategory(c.id);
+    setTask(t);
+    setScreen("task");
+  };
+
+  const rerollTask = async () => {
+    if (!category) return;
+    const t = await pickTaskForCategory(category.id);
+    setTask(t);
   };
 
   const goComplete = (kind) => {
@@ -281,20 +316,29 @@ export default function App() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {/* ---------------- CATEGORY ---------------- */}
+        {screen === "category" && (
+          <CategoryScreen
+            onSelect={chooseCategory}
+            onSettingsPress={() => setScreen("settings")}
+          />
+        )}
+
         {/* ---------------- TASK ---------------- */}
-        {screen === "task" && (
+        {screen === "task" && category && task && (
           <View style={styles.flexCol}>
-            <Header title="今日のタスク" onSettingsPress={() => setScreen("settings")} />
+            <Header title="今日のタスク" onBack={() => setScreen("category")} />
             <View style={styles.taskCard}>
               <View style={styles.categoryChip}>
-                <Text style={styles.categoryChipText}>{TASK.category}</Text>
+                <Text style={styles.categoryChipText}>{category.label}</Text>
               </View>
-              <Text style={styles.taskTitle}>{TASK.title}</Text>
-              <Text style={styles.taskNote}>{TASK.note}</Text>
+              <Text style={styles.taskTitle}>{task.title}</Text>
+              <Text style={styles.taskNote}>{task.note}</Text>
             </View>
             <View style={{ flex: 1, minHeight: 40 }} />
             <View style={{ gap: 10 }}>
               <PrimaryButton onPress={() => setScreen("before-photo")}>5分、はじめる</PrimaryButton>
+              <GhostButton onPress={rerollTask}>べつのタスクにする</GhostButton>
               <GhostButton onPress={() => setScreen("quick-photo")}>
                 今日はここまで（写真だけで完了）
               </GhostButton>
@@ -305,7 +349,7 @@ export default function App() {
         {/* ---------------- SETTINGS ---------------- */}
         {screen === "settings" && (
           <View style={styles.flexCol}>
-            <Header title="設定" onBack={() => setScreen("task")} />
+            <Header title="設定" onBack={() => setScreen("category")} />
             <NotificationSettingsScreen />
           </View>
         )}
@@ -326,9 +370,9 @@ export default function App() {
         )}
 
         {/* ---------------- TIMER ---------------- */}
-        {screen === "timer" && (
+        {screen === "timer" && task && (
           <View style={[styles.flexCol, { alignItems: "center" }]}>
-            <Header title={TASK.title} onBack={() => setScreen("before-photo")} />
+            <Header title={task.title} onBack={() => setScreen("before-photo")} />
 
             {phase === "running" && (
               <>
@@ -511,6 +555,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   settingsIcon: { fontSize: 16 },
+
+  categoryIntro: { fontSize: 13, color: C.ink, opacity: 0.65, marginBottom: 18 },
+  categoryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  categoryCard: {
+    width: "47%",
+    backgroundColor: C.card,
+    borderRadius: 20,
+    padding: 18,
+    gap: 10,
+  },
+  categoryDot: { width: 10, height: 10, borderRadius: 4, backgroundColor: C.sage, opacity: 0.6 },
+  categoryCardText: { fontSize: 15, fontWeight: "800", color: C.ink },
 
   taskCard: { backgroundColor: C.card, borderRadius: 24, padding: 20, marginBottom: 20 },
   categoryChip: {
