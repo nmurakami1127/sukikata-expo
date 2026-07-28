@@ -170,3 +170,8 @@ export async function scheduleDailyNotification(
 export async function cancelAllNotifications(): Promise<void> {
   await Notifications.cancelAllScheduledNotificationsAsync();
 }
+
+/** 通知をタップしてアプリが開かれたときに呼ばれる */
+export function addNotificationOpenedListener(callback: () => void) {
+  return Notifications.addNotificationResponseReceivedListener(callback);
+}

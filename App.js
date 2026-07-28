@@ -15,10 +15,18 @@ import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
 import Svg, { Circle } from "react-native-svg";
 import { NotificationSettingsScreen } from "./NotificationSettingsScreen";
-import { recordAppOpen } from "./storage";
+import { recordAppOpen, addNotificationOpenedListener } from "./storage";
 import { runDailyNotificationJob } from "./dailyJob";
 import { CATEGORIES } from "./taskData";
 import { pickTaskForCategory } from "./taskPicker";
+import {
+  initAnalytics,
+  trackTaskCompleted,
+  trackTaskSkipped,
+  trackStreakDay,
+  trackNotificationOpened,
+} from "./analytics";
+import { recordActivityAndGetStreak } from "./streakTracker";
 
 /* ---------- colors (spec section 5-1) ---------- */
 const C = {
@@ -254,8 +262,14 @@ export default function App() {
 
   useEffect(() => {
     // アプリを開いたことを記録し、許可済みなら通知内容を最新化する
+    initAnalytics();
     recordAppOpen();
     runDailyNotificationJob();
+
+    const sub = addNotificationOpenedListener(() => {
+      trackNotificationOpened();
+    });
+    return () => sub.remove();
   }, []);
 
   useEffect(() => {
@@ -297,6 +311,7 @@ export default function App() {
 
   const rerollTask = async () => {
     if (!category) return;
+    trackTaskSkipped();
     const t = await pickTaskForCategory(category.id);
     setTask(t);
   };
@@ -306,6 +321,15 @@ export default function App() {
     setPraiseMsg(pick(PRAISE[kind]));
     setPhotoMsg(beforePhoto || afterPhoto ? pick(PRAISE.photo) : "");
     setScreen("complete");
+    trackTaskCompleted(kind);
+    recordActivityAndGetStreak().then(trackStreakDay);
+  };
+
+  const goQuickComplete = () => {
+    setPraiseMsg(pick(PRAISE.photoOnly));
+    setScreen("quick-complete");
+    trackTaskCompleted("quick");
+    recordActivityAndGetStreak().then(trackStreakDay);
   };
 
   return (
@@ -494,14 +518,8 @@ export default function App() {
               subheading="写真を1枚撮るだけでも、記録になります。タスクをこなせなくても大丈夫です。"
               photo={quickPhoto}
               setPhoto={setQuickPhoto}
-              onSkip={() => {
-                setPraiseMsg(pick(PRAISE.photoOnly));
-                setScreen("quick-complete");
-              }}
-              onNext={() => {
-                setPraiseMsg(pick(PRAISE.photoOnly));
-                setScreen("quick-complete");
-              }}
+              onSkip={goQuickComplete}
+              onNext={goQuickComplete}
               nextLabel="これで完了にする"
             />
           </View>
