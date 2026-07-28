@@ -2,6 +2,7 @@
   "expo": {
     "name": "スキかた",
     "slug": "sukikata-timer-photo",
+    "owner": "nmurakami1127-team",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -41,6 +42,12 @@
       "eas": {
         "projectId": "c11efed0-0759-4f7d-a117-7d77bd089eb0"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/c11efed0-0759-4f7d-a117-7d77bd089eb0"
     }
   }
 }
