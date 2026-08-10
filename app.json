@@ -10,7 +10,10 @@
     "icon": "./assets/icons/ios-1024.png",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.sukikata.timerphoto"
+      "bundleIdentifier": "com.sukikata.timerphoto",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.sukikata.timerphoto",
