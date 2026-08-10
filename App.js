@@ -13,7 +13,7 @@ import {
 import { StatusBar } from "expo-status-bar";
 import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
-import Svg, { Circle } from "react-native-svg";
+import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { NotificationSettingsScreen } from "./NotificationSettingsScreen";
 import { recordAppOpen, addNotificationOpenedListener } from "./storage";
 import { runDailyNotificationJob } from "./dailyJob";
@@ -68,7 +68,7 @@ const PRAISE = {
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const fmt = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
-/* ---------- camera helper ----------
+/* ---------- photo helpers ----------
    Photos stay on-device only (ImagePicker writes to the app's local
    sandbox / cache). Nothing is uploaded anywhere. In production this
    uri would additionally be copied into FileSystem.documentDirectory
@@ -85,6 +85,40 @@ async function takePhoto() {
   });
   if (result.canceled) return null;
   return result.assets[0].uri;
+}
+
+async function pickFromLibrary() {
+  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!perm.granted) {
+    Alert.alert("写真を選べません", "設定アプリから写真へのアクセスを許可してください。");
+    return null;
+  }
+  const result = await ImagePicker.launchImageLibraryAsync({
+    quality: 0.6,
+    allowsEditing: false,
+  });
+  if (result.canceled) return null;
+  return result.assets[0].uri;
+}
+
+function choosePhotoSource(onPicked) {
+  Alert.alert("写真を追加", undefined, [
+    {
+      text: "撮影する",
+      onPress: async () => {
+        const uri = await takePhoto();
+        if (uri) onPicked(uri);
+      },
+    },
+    {
+      text: "ライブラリから選ぶ",
+      onPress: async () => {
+        const uri = await pickFromLibrary();
+        if (uri) onPicked(uri);
+      },
+    },
+    { text: "キャンセル", style: "cancel" },
+  ]);
 }
 
 /* ---------- shared UI pieces ---------- */
@@ -128,27 +162,24 @@ function GhostButton({ children, onPress }) {
 }
 
 function PhotoStep({ subheading, photo, setPhoto, onSkip, onNext, nextLabel }) {
-  const handleCapture = async () => {
-    const uri = await takePhoto();
-    if (uri) setPhoto(uri);
-  };
+  const handlePick = () => choosePhotoSource(setPhoto);
 
   return (
     <View style={{ flex: 1 }}>
       <Text style={styles.subheading}>{subheading}</Text>
 
       {!photo ? (
-        <TouchableOpacity style={styles.cameraWell} onPress={handleCapture} activeOpacity={0.8}>
+        <TouchableOpacity style={styles.cameraWell} onPress={handlePick} activeOpacity={0.8}>
           <View style={styles.cameraDot}>
             <Text style={{ fontSize: 22 }}>📷</Text>
           </View>
-          <Text style={styles.cameraWellText}>タップして撮影する</Text>
+          <Text style={styles.cameraWellText}>タップして追加する</Text>
         </TouchableOpacity>
       ) : (
         <View style={styles.photoPreviewWrap}>
           <Image source={{ uri: photo }} style={styles.photoPreview} />
-          <TouchableOpacity style={styles.retakeChip} onPress={handleCapture}>
-            <Text style={styles.retakeChipText}>↺ 撮り直す</Text>
+          <TouchableOpacity style={styles.retakeChip} onPress={handlePick}>
+            <Text style={styles.retakeChipText}>↺ 選び直す</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -209,10 +240,32 @@ function TimerRing({ progress, label, sublabel, pulse }) {
   );
 }
 
+function HomeIllustration() {
+  return (
+    <View style={styles.illustrationWrap}>
+      <Svg width={168} height={122} viewBox="0 0 168 122" fill="none">
+        <Circle cx="24" cy="22" r="5" fill={C.mustard} opacity="0.3" />
+        <Circle cx="146" cy="18" r="4" fill={C.coral} opacity="0.35" />
+        <Circle cx="150" cy="96" r="6" fill={C.sage} opacity="0.22" />
+
+        <Rect x="28" y="70" width="46" height="42" rx="9" fill={C.well} stroke={C.wellBorder} strokeWidth="2" />
+        <Rect x="94" y="70" width="46" height="42" rx="9" fill={C.well} stroke={C.wellBorder} strokeWidth="2" />
+
+        <Path d="M84 74 C84 54, 84 42, 84 22" stroke={C.sage} strokeWidth="4" strokeLinecap="round" />
+        <Path d="M84 36 C84 26, 74 20, 62 22" stroke={C.sage} strokeWidth="4" strokeLinecap="round" fill="none" />
+        <Path d="M84 48 C84 38, 96 33, 108 35" stroke={C.sage} strokeWidth="4" strokeLinecap="round" fill="none" />
+
+        <Circle cx="84" cy="18" r="7" fill={C.coral} />
+      </Svg>
+    </View>
+  );
+}
+
 function CategoryScreen({ onSelect, onSettingsPress }) {
   return (
     <View style={styles.flexCol}>
       <Header title="場所を選ぶ" onSettingsPress={onSettingsPress} />
+      <HomeIllustration />
       <Text style={styles.categoryIntro}>今いる場所から、5分だけ。</Text>
       <View style={styles.categoryGrid}>
         {CATEGORIES.map((c) => (
@@ -574,7 +627,8 @@ const styles = StyleSheet.create({
   },
   settingsIcon: { fontSize: 16 },
 
-  categoryIntro: { fontSize: 13, color: C.ink, opacity: 0.65, marginBottom: 18 },
+  illustrationWrap: { alignItems: "center", marginBottom: 14 },
+  categoryIntro: { fontSize: 13, color: C.ink, opacity: 0.65, marginBottom: 18, textAlign: "center" },
   categoryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   categoryCard: {
     width: "47%",
