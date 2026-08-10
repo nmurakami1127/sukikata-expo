@@ -264,9 +264,9 @@ function HomeIllustration() {
 function CategoryScreen({ onSelect, onSettingsPress }) {
   return (
     <View style={styles.flexCol}>
-      <Header title="場所を選ぶ" onSettingsPress={onSettingsPress} />
+      <Header title="どこを片付ける？" onSettingsPress={onSettingsPress} />
       <HomeIllustration />
-      <Text style={styles.categoryIntro}>今いる場所から、5分だけ。</Text>
+      <Text style={styles.categoryIntro}>今いる場所を選んで、5分だけ片付けましょう。</Text>
       <View style={styles.categoryGrid}>
         {CATEGORIES.map((c) => (
           <TouchableOpacity
