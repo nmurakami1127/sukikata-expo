@@ -607,7 +607,7 @@ export default function App() {
           <View style={styles.flexCol}>
             <Header title="はじめる前に" onBack={() => setScreen("task")} />
             <PhotoStep
-              subheading="撮っておくと、あとで見比べられます。義務ではありません。"
+              subheading="片付け前の状態を撮っておくと、あとで見比べられます。義務ではありません。"
               photo={beforePhoto}
               setPhoto={setBeforePhoto}
               onSkip={() => setScreen("timer")}
@@ -892,8 +892,7 @@ const styles = StyleSheet.create({
 
   subheading: { fontSize: 14, color: C.ink, opacity: 0.7, lineHeight: 20, marginBottom: 18 },
   cameraWell: {
-    flex: 1,
-    minHeight: 220,
+    height: 190,
     borderRadius: 24,
     backgroundColor: C.well,
     borderWidth: 1.5,
@@ -906,8 +905,8 @@ const styles = StyleSheet.create({
   cameraDot: { width: 60, height: 60, borderRadius: 30, backgroundColor: C.sage, alignItems: "center", justifyContent: "center" },
   cameraWellText: { fontSize: 14, fontWeight: "700", color: C.ink, opacity: 0.75 },
 
-  photoPreviewWrap: { flex: 1, minHeight: 220, borderRadius: 24, overflow: "hidden" },
-  photoPreview: { width: "100%", height: "100%", minHeight: 220 },
+  photoPreviewWrap: { height: 190, borderRadius: 24, overflow: "hidden" },
+  photoPreview: { width: "100%", height: "100%" },
   retakeChip: {
     position: "absolute",
     bottom: 12,
