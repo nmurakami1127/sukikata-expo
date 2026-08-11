@@ -19,9 +19,21 @@ export const CATEGORIES: Category[] = [
   { id: 'kitchen', label: 'キッチン' },
   { id: 'living', label: 'リビング' },
   { id: 'entrance', label: '玄関' },
-  { id: 'closet', label: 'クローゼット・衣類' },
-  { id: 'digital', label: 'デジタル・カバン類' },
+  { id: 'closet', label: 'クローゼット' },
+  { id: 'digital', label: 'デジタル' },
 ];
+
+/** カテゴリごとの淡い背景色とアイコン用のアクセント色 */
+export const CATEGORY_STYLE: Record<string, { bg: string; accent: string }> = {
+  desk: { bg: '#E7EFE3', accent: '#7E9578' },
+  floor: { bg: '#F1E9D8', accent: '#B4914E' },
+  shelf: { bg: '#F3E1DA', accent: '#C97F68' },
+  kitchen: { bg: '#E3ECE6', accent: '#5F8C74' },
+  living: { bg: '#F5E7CD', accent: '#BE9346' },
+  entrance: { bg: '#EDE1E8', accent: '#A8728F' },
+  closet: { bg: '#E4E6EF', accent: '#7480A8' },
+  digital: { bg: '#E6E9E3', accent: '#6E7A63' },
+};
 
 export const TASKS: Record<string, Task[]> = {
   desk: [

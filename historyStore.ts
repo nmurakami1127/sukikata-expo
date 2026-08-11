@@ -46,27 +46,32 @@ export async function recordTaskCompletion(
 
 export interface HistoryDay {
   date: string;
-  counts: { categoryLabel: string; count: number }[];
+  counts: { categoryId: string; categoryLabel: string; count: number }[];
 }
 
 /** 直近30日分を、日付ごと・カテゴリごとの件数にまとめて返す（新しい日付順） */
 export async function getRecentHistoryByDay(): Promise<HistoryDay[]> {
   const history = await loadHistory();
-  const byDate = new Map<string, Map<string, number>>();
+  const byDate = new Map<string, Map<string, { categoryLabel: string; count: number }>>();
 
   for (const entry of history) {
     if (!byDate.has(entry.date)) byDate.set(entry.date, new Map());
     const byCategory = byDate.get(entry.date)!;
-    byCategory.set(entry.categoryLabel, (byCategory.get(entry.categoryLabel) ?? 0) + 1);
+    const existing = byCategory.get(entry.categoryId);
+    byCategory.set(entry.categoryId, {
+      categoryLabel: entry.categoryLabel,
+      count: (existing?.count ?? 0) + 1,
+    });
   }
 
   return Array.from(byDate.entries())
     .sort((a, b) => (a[0] < b[0] ? 1 : -1))
     .map(([date, byCategory]) => ({
       date,
-      counts: Array.from(byCategory.entries()).map(([categoryLabel, count]) => ({
-        categoryLabel,
-        count,
+      counts: Array.from(byCategory.entries()).map(([categoryId, v]) => ({
+        categoryId,
+        categoryLabel: v.categoryLabel,
+        count: v.count,
       })),
     }));
 }

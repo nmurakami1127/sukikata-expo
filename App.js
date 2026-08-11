@@ -18,7 +18,7 @@ import { captureRef } from "react-native-view-shot";
 import { NotificationSettingsScreen } from "./NotificationSettingsScreen";
 import { recordAppOpen, addNotificationOpenedListener } from "./storage";
 import { runDailyNotificationJob } from "./dailyJob";
-import { CATEGORIES } from "./taskData";
+import { CATEGORIES, CATEGORY_STYLE } from "./taskData";
 import { pickTaskForCategory } from "./taskPicker";
 import {
   initAnalytics,
@@ -253,10 +253,90 @@ function TimerRing({ progress, label, sublabel, pulse }) {
   );
 }
 
+/* ---------- category pictogram icons ---------- */
+function CategoryIcon({ id, color, size = 22 }) {
+  const props = { width: size, height: size, viewBox: "0 0 24 24", fill: "none" };
+  switch (id) {
+    case "desk":
+      return (
+        <Svg {...props}>
+          <Rect x="3" y="9" width="18" height="3" rx="1" fill={color} />
+          <Path d="M6 12 L6 19 M18 12 L18 19" stroke={color} strokeWidth="2" strokeLinecap="round" />
+        </Svg>
+      );
+    case "floor":
+      return (
+        <Svg {...props}>
+          <Path d="M3 18 L21 18" stroke={color} strokeWidth="2" strokeLinecap="round" />
+          <Rect x="9" y="10" width="6" height="6" rx="1.5" fill={color} opacity="0.85" />
+        </Svg>
+      );
+    case "shelf":
+      return (
+        <Svg {...props}>
+          <Rect x="4" y="3" width="16" height="18" rx="1.5" stroke={color} strokeWidth="2" />
+          <Path d="M4 9 L20 9 M4 15 L20 15" stroke={color} strokeWidth="2" />
+        </Svg>
+      );
+    case "kitchen":
+      return (
+        <Svg {...props}>
+          <Path
+            d="M6 8 h10 v8 a5 5 0 0 1 -5 5 h0 a5 5 0 0 1 -5 -5 Z"
+            stroke={color}
+            strokeWidth="2"
+          />
+          <Path d="M16 10 h2 a2 2 0 0 1 0 4 h-2" stroke={color} strokeWidth="2" />
+        </Svg>
+      );
+    case "living":
+      return (
+        <Svg {...props}>
+          <Rect x="4" y="11" width="16" height="7" rx="2" stroke={color} strokeWidth="2" />
+          <Path d="M5 11 v-3 a2 2 0 0 1 2 -2 h10 a2 2 0 0 1 2 2 v3" stroke={color} strokeWidth="2" />
+          <Path d="M4 15 v4 M20 15 v4" stroke={color} strokeWidth="2" strokeLinecap="round" />
+        </Svg>
+      );
+    case "entrance":
+      return (
+        <Svg {...props}>
+          <Rect x="6" y="3" width="12" height="18" rx="1" stroke={color} strokeWidth="2" />
+          <Circle cx="15" cy="12" r="1.2" fill={color} />
+        </Svg>
+      );
+    case "closet":
+      return (
+        <Svg {...props}>
+          <Path d="M12 4 a2 2 0 1 1 -2 2" stroke={color} strokeWidth="2" strokeLinecap="round" />
+          <Path d="M12 6 L4 14 h16 Z" stroke={color} strokeWidth="2" strokeLinejoin="round" />
+        </Svg>
+      );
+    case "digital":
+      return (
+        <Svg {...props}>
+          <Rect x="5" y="9" width="14" height="11" rx="2" stroke={color} strokeWidth="2" />
+          <Path d="M8 9 v-2 a4 4 0 0 1 8 0 v2" stroke={color} strokeWidth="2" />
+        </Svg>
+      );
+    default:
+      return null;
+  }
+}
+
+function CategoryChip({ id, label }) {
+  const style = CATEGORY_STYLE[id];
+  return (
+    <View style={[styles.categoryChip, style && { backgroundColor: style.bg }]}>
+      {style && <CategoryIcon id={id} color={style.accent} size={14} />}
+      <Text style={styles.categoryChipText}>{label}</Text>
+    </View>
+  );
+}
+
 function HomeIllustration() {
   return (
     <View style={styles.illustrationWrap}>
-      <Svg width={168} height={122} viewBox="0 0 168 122" fill="none">
+      <Svg width={110} height={80} viewBox="0 0 168 122" fill="none">
         <Circle cx="24" cy="22" r="5" fill={C.mustard} opacity="0.3" />
         <Circle cx="146" cy="18" r="4" fill={C.coral} opacity="0.35" />
         <Circle cx="150" cy="96" r="6" fill={C.sage} opacity="0.22" />
@@ -282,20 +362,27 @@ function CategoryScreen({ onSelect, onSettingsPress, onHistoryPress }) {
         onSettingsPress={onSettingsPress}
         onHistoryPress={onHistoryPress}
       />
-      <HomeIllustration />
       <Text style={styles.categoryIntro}>今いる場所を選んで、5分だけ片付けましょう。</Text>
+      <HomeIllustration />
       <View style={styles.categoryGrid}>
-        {CATEGORIES.map((c) => (
-          <TouchableOpacity
-            key={c.id}
-            style={styles.categoryCard}
-            onPress={() => onSelect(c)}
-            activeOpacity={0.85}
-          >
-            <View style={styles.categoryDot} />
-            <Text style={styles.categoryCardText}>{c.label}</Text>
-          </TouchableOpacity>
-        ))}
+        {CATEGORIES.map((c) => {
+          const style = CATEGORY_STYLE[c.id];
+          return (
+            <TouchableOpacity
+              key={c.id}
+              style={[styles.categoryCard, { backgroundColor: style.bg }]}
+              onPress={() => onSelect(c)}
+              activeOpacity={0.85}
+            >
+              <View style={styles.categoryIconBadge}>
+                <CategoryIcon id={c.id} color={style.accent} />
+              </View>
+              <Text style={styles.categoryCardText} numberOfLines={1}>
+                {c.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
     </View>
   );
@@ -328,11 +415,11 @@ function HistoryScreen({ onBack }) {
             <Text style={styles.historyDate}>{formatHistoryDate(day.date)}</Text>
             <View style={styles.historyChipRow}>
               {day.counts.map((c) => (
-                <View key={c.categoryLabel} style={styles.historyChip}>
-                  <Text style={styles.historyChipText}>
-                    {c.categoryLabel} × {c.count}
-                  </Text>
-                </View>
+                <CategoryChip
+                  key={c.categoryId}
+                  id={c.categoryId}
+                  label={`${c.categoryLabel} × ${c.count}`}
+                />
               ))}
             </View>
           </View>
@@ -492,9 +579,7 @@ export default function App() {
               「5分、はじめる」を押すとタイマーが動きます。その間だけ取り組んでみましょう。
             </Text>
             <View style={styles.taskCard}>
-              <View style={styles.categoryChip}>
-                <Text style={styles.categoryChipText}>{category.label}</Text>
-              </View>
+              <CategoryChip id={category.id} label={category.label} />
               <Text style={styles.taskTitle}>{task.title}</Text>
               <Text style={styles.taskNote}>{task.note}</Text>
             </View>
@@ -722,7 +807,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   settingsIcon: { fontSize: 16 },
-  headerActions: { flexDirection: "row", gap: 8 },
+  headerActions: { flexDirection: "row", gap: 16 },
   historyBtn: {
     height: 34,
     borderRadius: 17,
@@ -738,34 +823,54 @@ const styles = StyleSheet.create({
   historyDayCard: { backgroundColor: C.card, borderRadius: 18, padding: 16, marginBottom: 12 },
   historyDate: { fontSize: 14, fontWeight: "800", color: C.ink, marginBottom: 10 },
   historyChipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  historyChip: { backgroundColor: C.well, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
-  historyChipText: { fontSize: 13, fontWeight: "700", color: C.ink },
 
   mementoComposite: { position: "absolute", top: -9999, left: 0, width: 600, height: 400, flexDirection: "row" },
   mementoHalf: { width: 300, height: 400 },
 
-  illustrationWrap: { alignItems: "center", marginBottom: 14 },
-  categoryIntro: { fontSize: 14, color: C.ink, opacity: 0.65, marginBottom: 18, textAlign: "center" },
+  illustrationWrap: { alignItems: "center", marginBottom: 10 },
+  categoryIntro: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: C.ink,
+    opacity: 0.85,
+    lineHeight: 23,
+    marginBottom: 6,
+    textAlign: "center",
+  },
   categoryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   categoryCard: {
     width: "47%",
+    minHeight: 68,
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: C.card,
-    borderRadius: 20,
-    padding: 18,
+    borderRadius: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
     gap: 10,
   },
-  categoryDot: { width: 10, height: 10, borderRadius: 4, backgroundColor: C.sage, opacity: 0.6 },
-  categoryCardText: { fontSize: 16, fontWeight: "800", color: C.ink },
+  categoryIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.7)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  categoryCardText: { fontSize: 16, fontWeight: "800", color: C.ink, flexShrink: 1 },
 
   taskHint: { fontSize: 13.5, color: C.ink, opacity: 0.6, lineHeight: 20, marginBottom: 14 },
 
   taskCard: { backgroundColor: C.card, borderRadius: 24, padding: 20, marginBottom: 20 },
   categoryChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     alignSelf: "flex-start",
     backgroundColor: C.well,
     borderRadius: 999,
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 5,
     marginBottom: 12,
   },
   categoryChipText: { fontSize: 12, fontWeight: "800", color: C.ink },
