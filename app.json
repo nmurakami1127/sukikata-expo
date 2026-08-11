@@ -32,6 +32,14 @@
       ],
       "@react-native-community/datetimepicker",
       [
+        "expo-media-library",
+        {
+          "photosPermission": "スキかたが、記念写真を保存するために写真へのアクセスを使用します。",
+          "savePhotosPermission": "スキかたが、記念写真を写真アプリに保存するために使用します。",
+          "isAccessMediaLocationEnabled": false
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/icons/ios-1024.png",

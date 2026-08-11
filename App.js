@@ -14,6 +14,7 @@ import { StatusBar } from "expo-status-bar";
 import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
+import { captureRef } from "react-native-view-shot";
 import { NotificationSettingsScreen } from "./NotificationSettingsScreen";
 import { recordAppOpen, addNotificationOpenedListener } from "./storage";
 import { runDailyNotificationJob } from "./dailyJob";
@@ -27,6 +28,8 @@ import {
   trackNotificationOpened,
 } from "./analytics";
 import { recordActivityAndGetStreak } from "./streakTracker";
+import { recordTaskCompletion, getRecentHistoryByDay } from "./historyStore";
+import { saveImageToLibrary } from "./memento";
 
 /* ---------- colors (spec section 5-1) ---------- */
 const C = {
@@ -123,7 +126,8 @@ function choosePhotoSource(onPicked) {
 
 /* ---------- shared UI pieces ---------- */
 
-function Header({ title, onBack, onSettingsPress }) {
+function Header({ title, onBack, onSettingsPress, onHistoryPress }) {
+  const hasRightButtons = onSettingsPress || onHistoryPress;
   return (
     <View style={styles.header}>
       {onBack ? (
@@ -134,10 +138,19 @@ function Header({ title, onBack, onSettingsPress }) {
         <View style={{ width: 34 }} />
       )}
       <Text style={styles.headerTitle}>{title}</Text>
-      {onSettingsPress ? (
-        <TouchableOpacity onPress={onSettingsPress} style={styles.settingsBtn}>
-          <Text style={styles.settingsIcon}>⚙️</Text>
-        </TouchableOpacity>
+      {hasRightButtons ? (
+        <View style={styles.headerActions}>
+          {onHistoryPress && (
+            <TouchableOpacity onPress={onHistoryPress} style={styles.settingsBtn}>
+              <Text style={styles.settingsIcon}>📋</Text>
+            </TouchableOpacity>
+          )}
+          {onSettingsPress && (
+            <TouchableOpacity onPress={onSettingsPress} style={styles.settingsBtn}>
+              <Text style={styles.settingsIcon}>⚙️</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       ) : (
         <View style={{ width: 34 }} />
       )}
@@ -261,10 +274,14 @@ function HomeIllustration() {
   );
 }
 
-function CategoryScreen({ onSelect, onSettingsPress }) {
+function CategoryScreen({ onSelect, onSettingsPress, onHistoryPress }) {
   return (
     <View style={styles.flexCol}>
-      <Header title="どこを片付ける？" onSettingsPress={onSettingsPress} />
+      <Header
+        title="どこを片付ける？"
+        onSettingsPress={onSettingsPress}
+        onHistoryPress={onHistoryPress}
+      />
       <HomeIllustration />
       <Text style={styles.categoryIntro}>今いる場所を選んで、5分だけ片付けましょう。</Text>
       <View style={styles.categoryGrid}>
@@ -280,6 +297,45 @@ function CategoryScreen({ onSelect, onSettingsPress }) {
           </TouchableOpacity>
         ))}
       </View>
+    </View>
+  );
+}
+
+function formatHistoryDate(dateString) {
+  const [, m, d] = dateString.split("-");
+  return `${parseInt(m, 10)}月${parseInt(d, 10)}日`;
+}
+
+function HistoryScreen({ onBack }) {
+  const [days, setDays] = useState(null);
+
+  useEffect(() => {
+    getRecentHistoryByDay().then(setDays);
+  }, []);
+
+  return (
+    <View style={styles.flexCol}>
+      <Header title="これまでの記録" onBack={onBack} />
+      {days && days.length === 0 && (
+        <Text style={styles.historyEmpty}>
+          まだ記録がありません。片付けをすると、ここに残っていきます。
+        </Text>
+      )}
+      {days &&
+        days.map((day) => (
+          <View key={day.date} style={styles.historyDayCard}>
+            <Text style={styles.historyDate}>{formatHistoryDate(day.date)}</Text>
+            <View style={styles.historyChipRow}>
+              {day.counts.map((c) => (
+                <View key={c.categoryLabel} style={styles.historyChip}>
+                  <Text style={styles.historyChipText}>
+                    {c.categoryLabel} × {c.count}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        ))}
     </View>
   );
 }
@@ -308,6 +364,7 @@ export default function App() {
   const [finishKind, setFinishKind] = useState("complete");
   const [praiseMsg, setPraiseMsg] = useState("");
   const [photoMsg, setPhotoMsg] = useState("");
+  const mementoRef = useRef(null);
 
   const notify = useCallback(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -376,6 +433,7 @@ export default function App() {
     setScreen("complete");
     trackTaskCompleted(kind);
     recordActivityAndGetStreak().then(trackStreakDay);
+    if (category && task) recordTaskCompletion(category.id, category.label, task.title);
   };
 
   const goQuickComplete = () => {
@@ -383,6 +441,24 @@ export default function App() {
     setScreen("quick-complete");
     trackTaskCompleted("quick");
     recordActivityAndGetStreak().then(trackStreakDay);
+    if (category && task) recordTaskCompletion(category.id, category.label, task.title);
+  };
+
+  const saveMemento = async () => {
+    try {
+      const uri =
+        beforePhoto && afterPhoto
+          ? await captureRef(mementoRef, { format: "jpg", quality: 0.9 })
+          : beforePhoto || afterPhoto;
+      if (!uri) return;
+      const ok = await saveImageToLibrary(uri);
+      Alert.alert(
+        ok ? "保存しました" : "保存できません",
+        ok ? "写真アプリに保存しました。" : "設定アプリから写真へのアクセスを許可してください。"
+      );
+    } catch {
+      Alert.alert("保存できませんでした", "もう一度お試しください。");
+    }
   };
 
   return (
@@ -398,7 +474,13 @@ export default function App() {
           <CategoryScreen
             onSelect={chooseCategory}
             onSettingsPress={() => setScreen("settings")}
+            onHistoryPress={() => setScreen("history")}
           />
+        )}
+
+        {/* ---------------- HISTORY ---------------- */}
+        {screen === "history" && (
+          <HistoryScreen onBack={() => setScreen("category")} />
         )}
 
         {/* ---------------- TASK ---------------- */}
@@ -412,7 +494,7 @@ export default function App() {
               <Text style={styles.taskTitle}>{task.title}</Text>
               <Text style={styles.taskNote}>{task.note}</Text>
             </View>
-            <View style={{ flex: 1, minHeight: 40 }} />
+            <View style={{ height: 24 }} />
             <View style={{ gap: 10 }}>
               <PrimaryButton onPress={() => setScreen("before-photo")}>5分、はじめる</PrimaryButton>
               <GhostButton onPress={rerollTask}>べつのタスクにする</GhostButton>
@@ -556,8 +638,18 @@ export default function App() {
               </View>
             )}
 
+            {beforePhoto && afterPhoto && (
+              <View ref={mementoRef} collapsable={false} style={styles.mementoComposite}>
+                <Image source={{ uri: beforePhoto }} style={styles.mementoHalf} />
+                <Image source={{ uri: afterPhoto }} style={styles.mementoHalf} />
+              </View>
+            )}
+
             <View style={{ flex: 1, minHeight: 20 }} />
-            <View style={{ width: "100%" }}>
+            <View style={{ width: "100%", gap: 10 }}>
+              {(beforePhoto || afterPhoto) && (
+                <GhostButton onPress={saveMemento}>写真を記念に残す</GhostButton>
+              )}
               <GhostButton onPress={resetAll}>ホームへ戻る</GhostButton>
             </View>
           </View>
@@ -626,6 +718,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   settingsIcon: { fontSize: 16 },
+  headerActions: { flexDirection: "row", gap: 8 },
+
+  historyEmpty: { fontSize: 13, color: C.ink, opacity: 0.6, textAlign: "center", marginTop: 40, lineHeight: 20 },
+  historyDayCard: { backgroundColor: C.card, borderRadius: 18, padding: 16, marginBottom: 12 },
+  historyDate: { fontSize: 13, fontWeight: "800", color: C.ink, marginBottom: 10 },
+  historyChipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  historyChip: { backgroundColor: C.well, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
+  historyChipText: { fontSize: 12, fontWeight: "700", color: C.ink },
+
+  mementoComposite: { position: "absolute", top: -9999, left: 0, width: 600, height: 400, flexDirection: "row" },
+  mementoHalf: { width: 300, height: 400 },
 
   illustrationWrap: { alignItems: "center", marginBottom: 14 },
   categoryIntro: { fontSize: 13, color: C.ink, opacity: 0.65, marginBottom: 18, textAlign: "center" },
