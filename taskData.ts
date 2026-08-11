@@ -41,7 +41,7 @@ export const TASKS: Record<string, Task[]> = {
     { id: 'desk_002', title: '机の上の紙類を1箇所に重ねる', note: '仕分けはしない、集めるだけ', cooldownDays: 14 },
     { id: 'desk_003', title: '使ったペン・文房具を1つの場所に戻す', note: '定位置がなければ「ペン置き場」を作るだけでOK', cooldownDays: 14 },
     { id: 'desk_004', title: 'マグカップ・食器を1つシンクへ運ぶ', note: '複数ある場合は1つだけでも可', cooldownDays: 14 },
-    { id: 'desk_005', title: '机の上を写真に撮って「今日はここまで」宣言', note: 'タスクをやらなくても記録だけでもOKという選択肢', cooldownDays: 14 },
+    { id: 'desk_005', title: '机の上を写真に撮って「今日はここまで」宣言', note: 'かたづけしなくても記録だけでもOKという選択肢', cooldownDays: 14 },
   ],
   floor: [
     { id: 'floor_001', title: '床に落ちている服を1着だけハンガーへ', note: '全部ではなく1着', cooldownDays: 14 },

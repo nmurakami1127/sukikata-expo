@@ -132,7 +132,7 @@ function Header({ title, onBack, onSettingsPress, onHistoryPress }) {
     <View style={styles.header}>
       {onBack ? (
         <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backArrow}>‹</Text>
+          <Text style={styles.backBtnText}>もどる</Text>
         </TouchableOpacity>
       ) : (
         <View style={{ width: 34 }} />
@@ -576,7 +576,6 @@ export default function App() {
         {/* ---------------- TASK ---------------- */}
         {screen === "task" && category && task && (
           <View style={styles.flexCol}>
-            <Header title="" onBack={() => setScreen("category")} />
             <View style={styles.taskCard}>
               <CategoryChip id={category.id} label={category.label} />
               <Text style={styles.taskTitle}>{task.title}</Text>
@@ -588,7 +587,8 @@ export default function App() {
             </Text>
             <View style={{ gap: 10 }}>
               <PrimaryButton onPress={() => setScreen("before-photo")}>5分、はじめる</PrimaryButton>
-              <GhostButton onPress={rerollTask}>べつのタスクにする</GhostButton>
+              <GhostButton onPress={rerollTask}>ほかのかたづけをする</GhostButton>
+              <GhostButton onPress={() => setScreen("category")}>ほかの場所をかたづける</GhostButton>
               <GhostButton onPress={() => setScreen("quick-photo")}>
                 今日はここまで（写真だけで完了）
               </GhostButton>
@@ -751,7 +751,7 @@ export default function App() {
           <View style={styles.flexCol}>
             <Header title="今日はここまで" onBack={() => setScreen("task")} />
             <PhotoStep
-              subheading="写真を1枚撮るだけでも、記録になります。タスクをこなせなくても大丈夫です。"
+              subheading="写真を1枚撮るだけでも、記録になります。かたづけしなくても大丈夫です。"
               photo={quickPhoto}
               setPhoto={setQuickPhoto}
               onSkip={goQuickComplete}
@@ -790,15 +790,16 @@ const styles = StyleSheet.create({
 
   header: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 22 },
   backBtn: {
-    width: 34,
+    flexDirection: "row",
+    alignItems: "center",
     height: 34,
     borderRadius: 17,
     borderWidth: 1.5,
     borderColor: C.ghostBorder,
-    alignItems: "center",
-    justifyContent: "center",
+    paddingHorizontal: 12,
+    gap: 2,
   },
-  backArrow: { fontSize: 22, color: C.ink, marginTop: -2 },
+  backBtnText: { fontSize: 13, fontWeight: "800", color: C.ink },
   headerTitle: { fontSize: 17, fontWeight: "800", color: C.ink, flex: 1 },
   settingsBtn: {
     width: 34,
