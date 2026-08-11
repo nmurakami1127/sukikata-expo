@@ -161,6 +161,7 @@ function Header({ title, onBack, onSettingsPress, onHistoryPress }) {
 function PrimaryButton({ children, onPress }) {
   return (
     <TouchableOpacity style={styles.primaryBtn} onPress={onPress} activeOpacity={0.85}>
+      <Text style={styles.primaryBtnIcon}>▶</Text>
       <Text style={styles.primaryBtnText}>{children}</Text>
     </TouchableOpacity>
   );
@@ -879,7 +880,22 @@ const styles = StyleSheet.create({
   taskTitle: { fontSize: 20, fontWeight: "800", color: C.ink, marginBottom: 8, lineHeight: 27 },
   taskNote: { fontSize: 14, color: C.ink, opacity: 0.65, lineHeight: 20 },
 
-  primaryBtn: { width: "100%", backgroundColor: C.sage, borderRadius: 18, paddingVertical: 19, alignItems: "center" },
+  primaryBtn: {
+    width: "100%",
+    backgroundColor: C.sage,
+    borderRadius: 18,
+    paddingVertical: 19,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    shadowColor: C.sageDark,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  primaryBtnIcon: { color: C.bg, fontSize: 16 },
   primaryBtnText: { color: C.bg, fontSize: 23, fontWeight: "900" },
   ghostBtn: {
     width: "100%",
