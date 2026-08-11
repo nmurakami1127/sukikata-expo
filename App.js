@@ -126,17 +126,11 @@ function choosePhotoSource(onPicked) {
 
 /* ---------- shared UI pieces ---------- */
 
-function Header({ title, onBack, onSettingsPress, onHistoryPress }) {
+function Header({ title, onSettingsPress, onHistoryPress }) {
   const hasRightButtons = onSettingsPress || onHistoryPress;
   return (
     <View style={styles.header}>
-      {onBack ? (
-        <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-          <Text style={styles.backBtnText}>もどる</Text>
-        </TouchableOpacity>
-      ) : (
-        <View style={{ width: 34 }} />
-      )}
+      <View style={{ width: 34 }} />
       <Text style={styles.headerTitle}>{title}</Text>
       {hasRightButtons ? (
         <View style={styles.headerActions}>
@@ -175,7 +169,7 @@ function GhostButton({ children, onPress }) {
   );
 }
 
-function PhotoStep({ subheading, photo, setPhoto, onSkip, onNext, nextLabel }) {
+function PhotoStep({ subheading, photo, setPhoto, onNext, nextLabel, onBack }) {
   const handlePick = () => choosePhotoSource(setPhoto);
 
   return (
@@ -200,7 +194,7 @@ function PhotoStep({ subheading, photo, setPhoto, onSkip, onNext, nextLabel }) {
 
       <View style={{ gap: 10, marginTop: 20 }}>
         <PrimaryButton onPress={onNext}>{nextLabel}</PrimaryButton>
-        {!photo && <GhostButton onPress={onSkip}>スキップ</GhostButton>}
+        {onBack && <GhostButton onPress={onBack}>もどる</GhostButton>}
       </View>
     </View>
   );
@@ -403,7 +397,7 @@ function HistoryScreen({ onBack }) {
 
   return (
     <View style={styles.flexCol}>
-      <Header title="これまでの記録" onBack={onBack} />
+      <Header title="これまでの記録" />
       <Text style={styles.taskHint}>直近30日に取り組んだ場所と回数です。写真は含まれません。</Text>
       {days && days.length === 0 && (
         <Text style={styles.historyEmpty}>
@@ -425,6 +419,9 @@ function HistoryScreen({ onBack }) {
             </View>
           </View>
         ))}
+      <View style={{ marginTop: 20 }}>
+        <GhostButton onPress={onBack}>もどる</GhostButton>
+      </View>
     </View>
   );
 }
@@ -599,22 +596,25 @@ export default function App() {
         {/* ---------------- SETTINGS ---------------- */}
         {screen === "settings" && (
           <View style={styles.flexCol}>
-            <Header title="設定" onBack={() => setScreen("category")} />
+            <Header title="設定" />
             <NotificationSettingsScreen />
+            <View style={{ marginTop: 20 }}>
+              <GhostButton onPress={() => setScreen("category")}>もどる</GhostButton>
+            </View>
           </View>
         )}
 
         {/* ---------------- BEFORE PHOTO ---------------- */}
         {screen === "before-photo" && (
           <View style={styles.flexCol}>
-            <Header title="はじめる前に" onBack={() => setScreen("task")} />
+            <Header title="はじめる前に" />
             <PhotoStep
               subheading="片付け前の状態を撮っておくと、あとで見比べられます。義務ではありません。"
               photo={beforePhoto}
               setPhoto={setBeforePhoto}
-              onSkip={() => setScreen("timer")}
               onNext={() => setScreen("timer")}
               nextLabel="タイマーをはじめる"
+              onBack={() => setScreen("task")}
             />
           </View>
         )}
@@ -622,13 +622,13 @@ export default function App() {
         {/* ---------------- TIMER ---------------- */}
         {screen === "timer" && task && (
           <View style={[styles.flexCol, { alignItems: "center" }]}>
-            <Header title={task.title} onBack={() => setScreen("before-photo")} />
+            <Header title={task.title} />
 
             {phase === "running" && (
               <>
                 <TimerRing progress={timeLeft / 300} label={fmt(timeLeft)} sublabel="のこり時間" />
                 <View style={{ flex: 1, minHeight: 20 }} />
-                <View style={{ width: "100%" }}>
+                <View style={{ width: "100%", gap: 10 }}>
                   <GhostButton
                     onPress={() => {
                       setFinishKind("early");
@@ -637,6 +637,7 @@ export default function App() {
                   >
                     完了した
                   </GhostButton>
+                  <GhostButton onPress={() => setScreen("before-photo")}>もどる</GhostButton>
                 </View>
               </>
             )}
@@ -658,6 +659,7 @@ export default function App() {
                     ここで終わる
                   </PrimaryButton>
                   <GhostButton onPress={() => setPhase("extending")}>まだやる</GhostButton>
+                  <GhostButton onPress={() => setScreen("before-photo")}>もどる</GhostButton>
                 </View>
               </View>
             )}
@@ -666,7 +668,7 @@ export default function App() {
               <>
                 <TimerRing progress={1} label={`+${fmt(extraTime)}`} sublabel="延長中" pulse />
                 <View style={{ flex: 1, minHeight: 20 }} />
-                <View style={{ width: "100%" }}>
+                <View style={{ width: "100%", gap: 10 }}>
                   <PrimaryButton
                     onPress={() => {
                       setFinishKind("complete");
@@ -675,6 +677,7 @@ export default function App() {
                   >
                     ここで終わる
                   </PrimaryButton>
+                  <GhostButton onPress={() => setScreen("before-photo")}>もどる</GhostButton>
                 </View>
               </>
             )}
@@ -689,7 +692,6 @@ export default function App() {
               subheading="変化が残せます。こちらも任意です。"
               photo={afterPhoto}
               setPhoto={setAfterPhoto}
-              onSkip={() => goComplete(finishKind)}
               onNext={() => goComplete(finishKind)}
               nextLabel="完了にする"
             />
@@ -749,14 +751,14 @@ export default function App() {
         {/* ---------------- QUICK PHOTO-ONLY ---------------- */}
         {screen === "quick-photo" && (
           <View style={styles.flexCol}>
-            <Header title="今日はここまで" onBack={() => setScreen("task")} />
+            <Header title="今日はここまで" />
             <PhotoStep
               subheading="写真を1枚撮るだけでも、記録になります。かたづけしなくても大丈夫です。"
               photo={quickPhoto}
               setPhoto={setQuickPhoto}
-              onSkip={goQuickComplete}
               onNext={goQuickComplete}
               nextLabel="これで完了にする"
+              onBack={() => setScreen("task")}
             />
           </View>
         )}
@@ -789,17 +791,6 @@ const styles = StyleSheet.create({
   flexCol: { flex: 1 },
 
   header: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 22 },
-  backBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 1.5,
-    borderColor: C.ghostBorder,
-    paddingHorizontal: 12,
-    gap: 2,
-  },
-  backBtnText: { fontSize: 13, fontWeight: "800", color: C.ink },
   headerTitle: { fontSize: 17, fontWeight: "800", color: C.ink, flex: 1 },
   settingsBtn: {
     width: 34,
