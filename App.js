@@ -141,8 +141,8 @@ function Header({ title, onBack, onSettingsPress, onHistoryPress }) {
       {hasRightButtons ? (
         <View style={styles.headerActions}>
           {onHistoryPress && (
-            <TouchableOpacity onPress={onHistoryPress} style={styles.settingsBtn}>
-              <Text style={styles.settingsIcon}>📋</Text>
+            <TouchableOpacity onPress={onHistoryPress} style={styles.historyBtn}>
+              <Text style={styles.historyBtnText}>記録</Text>
             </TouchableOpacity>
           )}
           {onSettingsPress && (
@@ -316,6 +316,7 @@ function HistoryScreen({ onBack }) {
   return (
     <View style={styles.flexCol}>
       <Header title="これまでの記録" onBack={onBack} />
+      <Text style={styles.taskHint}>直近30日に取り組んだ場所と回数です。写真は含まれません。</Text>
       {days && days.length === 0 && (
         <Text style={styles.historyEmpty}>
           まだ記録がありません。片付けをすると、ここに残っていきます。
@@ -487,6 +488,9 @@ export default function App() {
         {screen === "task" && category && task && (
           <View style={styles.flexCol}>
             <Header title="今日のタスク" onBack={() => setScreen("category")} />
+            <Text style={styles.taskHint}>
+              「5分、はじめる」を押すとタイマーが動きます。その間だけ取り組んでみましょう。
+            </Text>
             <View style={styles.taskCard}>
               <View style={styles.categoryChip}>
                 <Text style={styles.categoryChipText}>{category.label}</Text>
@@ -706,8 +710,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  backArrow: { fontSize: 20, color: C.ink, marginTop: -2 },
-  headerTitle: { fontSize: 15, fontWeight: "800", color: C.ink, flex: 1 },
+  backArrow: { fontSize: 22, color: C.ink, marginTop: -2 },
+  headerTitle: { fontSize: 17, fontWeight: "800", color: C.ink, flex: 1 },
   settingsBtn: {
     width: 34,
     height: 34,
@@ -719,19 +723,29 @@ const styles = StyleSheet.create({
   },
   settingsIcon: { fontSize: 16 },
   headerActions: { flexDirection: "row", gap: 8 },
+  historyBtn: {
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1.5,
+    borderColor: C.ghostBorder,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 14,
+  },
+  historyBtnText: { fontSize: 13, fontWeight: "800", color: C.ink },
 
-  historyEmpty: { fontSize: 13, color: C.ink, opacity: 0.6, textAlign: "center", marginTop: 40, lineHeight: 20 },
+  historyEmpty: { fontSize: 14, color: C.ink, opacity: 0.6, textAlign: "center", marginTop: 40, lineHeight: 21 },
   historyDayCard: { backgroundColor: C.card, borderRadius: 18, padding: 16, marginBottom: 12 },
-  historyDate: { fontSize: 13, fontWeight: "800", color: C.ink, marginBottom: 10 },
+  historyDate: { fontSize: 14, fontWeight: "800", color: C.ink, marginBottom: 10 },
   historyChipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   historyChip: { backgroundColor: C.well, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
-  historyChipText: { fontSize: 12, fontWeight: "700", color: C.ink },
+  historyChipText: { fontSize: 13, fontWeight: "700", color: C.ink },
 
   mementoComposite: { position: "absolute", top: -9999, left: 0, width: 600, height: 400, flexDirection: "row" },
   mementoHalf: { width: 300, height: 400 },
 
   illustrationWrap: { alignItems: "center", marginBottom: 14 },
-  categoryIntro: { fontSize: 13, color: C.ink, opacity: 0.65, marginBottom: 18, textAlign: "center" },
+  categoryIntro: { fontSize: 14, color: C.ink, opacity: 0.65, marginBottom: 18, textAlign: "center" },
   categoryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   categoryCard: {
     width: "47%",
@@ -741,7 +755,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   categoryDot: { width: 10, height: 10, borderRadius: 4, backgroundColor: C.sage, opacity: 0.6 },
-  categoryCardText: { fontSize: 15, fontWeight: "800", color: C.ink },
+  categoryCardText: { fontSize: 16, fontWeight: "800", color: C.ink },
+
+  taskHint: { fontSize: 13.5, color: C.ink, opacity: 0.6, lineHeight: 20, marginBottom: 14 },
 
   taskCard: { backgroundColor: C.card, borderRadius: 24, padding: 20, marginBottom: 20 },
   categoryChip: {
@@ -752,12 +768,12 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     marginBottom: 12,
   },
-  categoryChipText: { fontSize: 11, fontWeight: "800", color: C.ink },
-  taskTitle: { fontSize: 19, fontWeight: "800", color: C.ink, marginBottom: 8, lineHeight: 26 },
-  taskNote: { fontSize: 13, color: C.ink, opacity: 0.65, lineHeight: 19 },
+  categoryChipText: { fontSize: 12, fontWeight: "800", color: C.ink },
+  taskTitle: { fontSize: 20, fontWeight: "800", color: C.ink, marginBottom: 8, lineHeight: 27 },
+  taskNote: { fontSize: 14, color: C.ink, opacity: 0.65, lineHeight: 20 },
 
   primaryBtn: { width: "100%", backgroundColor: C.sage, borderRadius: 18, paddingVertical: 16, alignItems: "center" },
-  primaryBtnText: { color: C.bg, fontSize: 15, fontWeight: "800" },
+  primaryBtnText: { color: C.bg, fontSize: 16, fontWeight: "800" },
   ghostBtn: {
     width: "100%",
     backgroundColor: "transparent",
@@ -767,9 +783,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: "center",
   },
-  ghostBtnText: { color: C.ink, fontSize: 14, fontWeight: "700" },
+  ghostBtnText: { color: C.ink, fontSize: 15, fontWeight: "700" },
 
-  subheading: { fontSize: 13, color: C.ink, opacity: 0.7, lineHeight: 19, marginBottom: 18 },
+  subheading: { fontSize: 14, color: C.ink, opacity: 0.7, lineHeight: 20, marginBottom: 18 },
   cameraWell: {
     flex: 1,
     minHeight: 220,
@@ -783,7 +799,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   cameraDot: { width: 60, height: 60, borderRadius: 30, backgroundColor: C.sage, alignItems: "center", justifyContent: "center" },
-  cameraWellText: { fontSize: 13, fontWeight: "700", color: C.ink, opacity: 0.75 },
+  cameraWellText: { fontSize: 14, fontWeight: "700", color: C.ink, opacity: 0.75 },
 
   photoPreviewWrap: { flex: 1, minHeight: 220, borderRadius: 24, overflow: "hidden" },
   photoPreview: { width: "100%", height: "100%", minHeight: 220 },
@@ -796,12 +812,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  retakeChipText: { color: C.bg, fontSize: 12, fontWeight: "700" },
+  retakeChipText: { color: C.bg, fontSize: 13, fontWeight: "700" },
 
   ringWrap: { width: 220, height: 220, alignItems: "center", justifyContent: "center", marginVertical: 28 },
   ringLabelWrap: { position: "absolute", alignItems: "center" },
-  ringLabel: { fontSize: 36, fontWeight: "800", color: C.ink },
-  ringSublabel: { fontSize: 12, fontWeight: "600", color: C.ink, opacity: 0.55, marginTop: 4 },
+  ringLabel: { fontSize: 38, fontWeight: "800", color: C.ink },
+  ringSublabel: { fontSize: 13, fontWeight: "600", color: C.ink, opacity: 0.55, marginTop: 4 },
 
   endedBox: { flex: 1, width: "100%", alignItems: "center", justifyContent: "center" },
   mustardBadge: {
@@ -813,8 +829,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 18,
   },
-  endedTitle: { fontSize: 16, fontWeight: "800", color: C.ink, marginBottom: 4 },
-  endedNote: { fontSize: 13, color: C.ink, opacity: 0.6, marginBottom: 30, textAlign: "center" },
+  endedTitle: { fontSize: 17, fontWeight: "800", color: C.ink, marginBottom: 4 },
+  endedNote: { fontSize: 14, color: C.ink, opacity: 0.6, marginBottom: 30, textAlign: "center" },
 
   sproutBadge: {
     width: 56,
@@ -825,8 +841,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 18,
   },
-  praiseMain: { fontSize: 17, fontWeight: "800", color: C.ink, textAlign: "center", lineHeight: 25, marginBottom: 8 },
-  praiseSub: { fontSize: 13, color: C.ink, opacity: 0.6, textAlign: "center", marginBottom: 18 },
+  praiseMain: { fontSize: 18, fontWeight: "800", color: C.ink, textAlign: "center", lineHeight: 26, marginBottom: 8 },
+  praiseSub: { fontSize: 14, color: C.ink, opacity: 0.6, textAlign: "center", marginBottom: 18 },
 
   compareRow: { flexDirection: "row", gap: 12, width: "100%", marginTop: 6, marginBottom: 20 },
   compareCol: { flex: 1 },
@@ -840,7 +856,7 @@ const styles = StyleSheet.create({
   },
   compareImg: { width: "100%", height: "100%" },
   emptyThumb: { color: C.ink, opacity: 0.3, fontSize: 18 },
-  compareLabel: { fontSize: 11, fontWeight: "700", color: C.ink, opacity: 0.5, marginTop: 6, textAlign: "center" },
+  compareLabel: { fontSize: 12, fontWeight: "700", color: C.ink, opacity: 0.5, marginTop: 6, textAlign: "center" },
 
   quickPhoto: { width: 160, height: 160, borderRadius: 18, marginBottom: 16 },
 });
