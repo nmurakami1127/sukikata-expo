@@ -5,11 +5,11 @@ import {
   TouchableOpacity,
   Image,
   StyleSheet,
-  SafeAreaView,
   Animated,
   Alert,
   ScrollView,
 } from "react-native";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
@@ -550,6 +550,7 @@ export default function App() {
   };
 
   return (
+    <SafeAreaProvider>
     <SafeAreaView style={styles.outer}>
       <StatusBar style="dark" />
       <ScrollView
@@ -776,6 +777,7 @@ export default function App() {
         )}
       </ScrollView>
     </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 
