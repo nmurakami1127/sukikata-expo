@@ -878,7 +878,7 @@ const styles = StyleSheet.create({
   taskNote: { fontSize: 14, color: C.ink, opacity: 0.65, lineHeight: 20 },
 
   primaryBtn: { width: "100%", backgroundColor: C.sage, borderRadius: 18, paddingVertical: 16, alignItems: "center" },
-  primaryBtnText: { color: C.bg, fontSize: 16, fontWeight: "800" },
+  primaryBtnText: { color: C.bg, fontSize: 20, fontWeight: "900" },
   ghostBtn: {
     width: "100%",
     backgroundColor: "transparent",
