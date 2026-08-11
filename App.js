@@ -577,15 +577,15 @@ export default function App() {
         {screen === "task" && category && task && (
           <View style={styles.flexCol}>
             <Header title="" onBack={() => setScreen("category")} />
-            <Text style={styles.taskHint}>
-              「5分、はじめる」を押すとタイマーが動きます。その間だけ取り組んでみましょう。
-            </Text>
             <View style={styles.taskCard}>
               <CategoryChip id={category.id} label={category.label} />
               <Text style={styles.taskTitle}>{task.title}</Text>
               <Text style={styles.taskNote}>{task.note}</Text>
             </View>
-            <View style={{ height: 24 }} />
+            <View style={{ height: 20 }} />
+            <Text style={styles.taskHint}>
+              下のボタンを押すと、5分間のタイマーが始まります。
+            </Text>
             <View style={{ gap: 10 }}>
               <PrimaryButton onPress={() => setScreen("before-photo")}>5分、はじめる</PrimaryButton>
               <GhostButton onPress={rerollTask}>べつのタスクにする</GhostButton>
@@ -862,7 +862,15 @@ const styles = StyleSheet.create({
   },
   categoryCardText: { fontSize: 16, fontWeight: "800", color: C.ink, flexShrink: 1 },
 
-  taskHint: { fontSize: 13.5, color: C.ink, opacity: 0.6, lineHeight: 20, marginBottom: 14 },
+  taskHint: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: C.ink,
+    opacity: 0.75,
+    lineHeight: 20,
+    marginBottom: 14,
+    textAlign: "center",
+  },
 
   taskCard: { backgroundColor: C.card, borderRadius: 24, padding: 20, marginBottom: 20 },
   categoryChip: {
