@@ -879,8 +879,8 @@ const styles = StyleSheet.create({
   taskTitle: { fontSize: 20, fontWeight: "800", color: C.ink, marginBottom: 8, lineHeight: 27 },
   taskNote: { fontSize: 14, color: C.ink, opacity: 0.65, lineHeight: 20 },
 
-  primaryBtn: { width: "100%", backgroundColor: C.sage, borderRadius: 18, paddingVertical: 16, alignItems: "center" },
-  primaryBtnText: { color: C.bg, fontSize: 20, fontWeight: "900" },
+  primaryBtn: { width: "100%", backgroundColor: C.sage, borderRadius: 18, paddingVertical: 19, alignItems: "center" },
+  primaryBtnText: { color: C.bg, fontSize: 23, fontWeight: "900" },
   ghostBtn: {
     width: "100%",
     backgroundColor: "transparent",
