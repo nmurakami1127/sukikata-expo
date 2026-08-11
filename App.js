@@ -575,7 +575,7 @@ export default function App() {
         {/* ---------------- TASK ---------------- */}
         {screen === "task" && category && task && (
           <View style={styles.flexCol}>
-            <Header title="今日のタスク" onBack={() => setScreen("category")} />
+            <Header title="" onBack={() => setScreen("category")} />
             <Text style={styles.taskHint}>
               「5分、はじめる」を押すとタイマーが動きます。その間だけ取り組んでみましょう。
             </Text>
