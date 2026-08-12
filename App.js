@@ -1,3 +1,4 @@
+import "react-native-gesture-handler";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View,
@@ -10,6 +11,11 @@ import {
   ScrollView,
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import {
+  GestureHandlerRootView,
+  Gesture,
+  GestureDetector,
+} from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
 import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
@@ -125,6 +131,24 @@ function choosePhotoSource(onPicked) {
 }
 
 /* ---------- shared UI pieces ---------- */
+
+/** 画面を右向きにスワイプすると onSwipeBack を呼ぶ（タイマー画面以外で使用） */
+function SwipeBack({ onSwipeBack, children }) {
+  const swipe = Gesture.Pan()
+    .activeOffsetX(20)
+    .failOffsetY([-20, 20])
+    .onEnd((e) => {
+      if (e.translationX > 60) {
+        onSwipeBack();
+      }
+    });
+
+  return (
+    <GestureDetector gesture={swipe}>
+      <View style={{ flex: 1 }}>{children}</View>
+    </GestureDetector>
+  );
+}
 
 function Header({ title, onSettingsPress, onHistoryPress }) {
   const hasRightButtons = onSettingsPress || onHistoryPress;
@@ -450,6 +474,7 @@ export default function App() {
   const [finishKind, setFinishKind] = useState("complete");
   const [praiseMsg, setPraiseMsg] = useState("");
   const [photoMsg, setPhotoMsg] = useState("");
+  const [timerPaused, setTimerPaused] = useState(false);
   const mementoRef = useRef(null);
 
   const notify = useCallback(() => {
@@ -469,7 +494,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (screen !== "timer" || phase !== "running") return;
+    if (screen !== "timer" || phase !== "running" || timerPaused) return;
     if (timeLeft <= 0) {
       setPhase("ended");
       notify();
@@ -477,7 +502,7 @@ export default function App() {
     }
     const id = setTimeout(() => setTimeLeft((t) => t - 1), 1000);
     return () => clearTimeout(id);
-  }, [screen, phase, timeLeft, notify]);
+  }, [screen, phase, timeLeft, timerPaused, notify]);
 
   useEffect(() => {
     if (screen !== "timer" || phase !== "extending") return;
@@ -496,6 +521,15 @@ export default function App() {
     setExtraTime(0);
     setPhase("running");
     setFinishKind("complete");
+    setTimerPaused(false);
+  };
+
+  const cancelTimer = () => {
+    setTimeLeft(300);
+    setExtraTime(0);
+    setPhase("running");
+    setTimerPaused(false);
+    setScreen("before-photo");
   };
 
   const chooseCategory = async (c) => {
@@ -508,7 +542,8 @@ export default function App() {
   const rerollTask = async () => {
     if (!category) return;
     trackTaskSkipped();
-    const t = await pickTaskForCategory(category.id);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    const t = await pickTaskForCategory(category.id, task?.id);
     setTask(t);
   };
 
@@ -548,6 +583,7 @@ export default function App() {
   };
 
   return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <SafeAreaProvider>
     <SafeAreaView style={styles.outer}>
       <StatusBar style="dark" />
@@ -567,56 +603,65 @@ export default function App() {
 
         {/* ---------------- HISTORY ---------------- */}
         {screen === "history" && (
-          <HistoryScreen onBack={() => setScreen("category")} />
+          <SwipeBack onSwipeBack={() => setScreen("category")}>
+            <HistoryScreen onBack={() => setScreen("category")} />
+          </SwipeBack>
         )}
 
         {/* ---------------- TASK ---------------- */}
         {screen === "task" && category && task && (
-          <View style={styles.flexCol}>
-            <View style={styles.taskCard}>
-              <CategoryChip id={category.id} label={category.label} />
-              <Text style={styles.taskTitle}>{task.title}</Text>
-              <Text style={styles.taskNote}>{task.note}</Text>
+          <SwipeBack onSwipeBack={() => setScreen("category")}>
+            <View style={styles.flexCol}>
+              <Header title="今日のかたづけ" />
+              <View style={styles.taskCard}>
+                <CategoryChip id={category.id} label={category.label} />
+                <Text style={styles.taskTitle}>{task.title}</Text>
+                <Text style={styles.taskNote}>{task.note}</Text>
+              </View>
+              <View style={{ height: 20 }} />
+              <Text style={styles.taskHint}>
+                下のボタンを押すと、5分間のタイマーが始まります。
+              </Text>
+              <View style={{ gap: 10 }}>
+                <PrimaryButton onPress={() => setScreen("before-photo")}>5分、はじめる</PrimaryButton>
+                <GhostButton onPress={rerollTask}>ほかのかたづけをする</GhostButton>
+                <GhostButton onPress={() => setScreen("category")}>ほかの場所をかたづける</GhostButton>
+                <GhostButton onPress={() => setScreen("quick-photo")}>
+                  今日はここまで（写真だけで完了）
+                </GhostButton>
+              </View>
             </View>
-            <View style={{ height: 20 }} />
-            <Text style={styles.taskHint}>
-              下のボタンを押すと、5分間のタイマーが始まります。
-            </Text>
-            <View style={{ gap: 10 }}>
-              <PrimaryButton onPress={() => setScreen("before-photo")}>5分、はじめる</PrimaryButton>
-              <GhostButton onPress={rerollTask}>ほかのかたづけをする</GhostButton>
-              <GhostButton onPress={() => setScreen("category")}>ほかの場所をかたづける</GhostButton>
-              <GhostButton onPress={() => setScreen("quick-photo")}>
-                今日はここまで（写真だけで完了）
-              </GhostButton>
-            </View>
-          </View>
+          </SwipeBack>
         )}
 
         {/* ---------------- SETTINGS ---------------- */}
         {screen === "settings" && (
-          <View style={styles.flexCol}>
-            <Header title="設定" />
-            <NotificationSettingsScreen />
-            <View style={{ marginTop: 20 }}>
-              <GhostButton onPress={() => setScreen("category")}>もどる</GhostButton>
+          <SwipeBack onSwipeBack={() => setScreen("category")}>
+            <View style={styles.flexCol}>
+              <Header title="設定" />
+              <NotificationSettingsScreen />
+              <View style={{ marginTop: 20 }}>
+                <GhostButton onPress={() => setScreen("category")}>もどる</GhostButton>
+              </View>
             </View>
-          </View>
+          </SwipeBack>
         )}
 
         {/* ---------------- BEFORE PHOTO ---------------- */}
         {screen === "before-photo" && (
-          <View style={styles.flexCol}>
-            <Header title="はじめる前に" />
-            <PhotoStep
-              subheading="片付け前の状態を撮っておくと、あとで見比べられます。義務ではありません。"
-              photo={beforePhoto}
-              setPhoto={setBeforePhoto}
-              onNext={() => setScreen("timer")}
-              nextLabel="タイマーをはじめる"
-              onBack={() => setScreen("task")}
-            />
-          </View>
+          <SwipeBack onSwipeBack={() => setScreen("task")}>
+            <View style={styles.flexCol}>
+              <Header title="はじめる前に" />
+              <PhotoStep
+                subheading="片付け前の状態を撮っておくと、あとで見比べられます。義務ではありません。"
+                photo={beforePhoto}
+                setPhoto={setBeforePhoto}
+                onNext={() => setScreen("timer")}
+                nextLabel="タイマーをはじめる"
+                onBack={() => setScreen("task")}
+              />
+            </View>
+          </SwipeBack>
         )}
 
         {/* ---------------- TIMER ---------------- */}
@@ -626,7 +671,11 @@ export default function App() {
 
             {phase === "running" && (
               <>
-                <TimerRing progress={timeLeft / 300} label={fmt(timeLeft)} sublabel="のこり時間" />
+                <TimerRing
+                  progress={timeLeft / 300}
+                  label={fmt(timeLeft)}
+                  sublabel={timerPaused ? "一時停止中" : "のこり時間"}
+                />
                 <View style={{ flex: 1, minHeight: 20 }} />
                 <View style={{ width: "100%", gap: 10 }}>
                   <GhostButton
@@ -637,7 +686,10 @@ export default function App() {
                   >
                     完了した
                   </GhostButton>
-                  <GhostButton onPress={() => setScreen("before-photo")}>もどる</GhostButton>
+                  <GhostButton onPress={() => setTimerPaused((p) => !p)}>
+                    {timerPaused ? "タイマーを再開する" : "タイマーを一時停止する"}
+                  </GhostButton>
+                  <GhostButton onPress={cancelTimer}>やっぱやめる</GhostButton>
                 </View>
               </>
             )}
@@ -659,7 +711,7 @@ export default function App() {
                     ここで終わる
                   </PrimaryButton>
                   <GhostButton onPress={() => setPhase("extending")}>まだやる</GhostButton>
-                  <GhostButton onPress={() => setScreen("before-photo")}>もどる</GhostButton>
+                  <GhostButton onPress={cancelTimer}>やっぱやめる</GhostButton>
                 </View>
               </View>
             )}
@@ -677,7 +729,7 @@ export default function App() {
                   >
                     ここで終わる
                   </PrimaryButton>
-                  <GhostButton onPress={() => setScreen("before-photo")}>もどる</GhostButton>
+                  <GhostButton onPress={cancelTimer}>やっぱやめる</GhostButton>
                 </View>
               </>
             )}
@@ -750,17 +802,19 @@ export default function App() {
 
         {/* ---------------- QUICK PHOTO-ONLY ---------------- */}
         {screen === "quick-photo" && (
-          <View style={styles.flexCol}>
-            <Header title="今日はここまで" />
-            <PhotoStep
-              subheading="写真を1枚撮るだけでも、記録になります。かたづけしなくても大丈夫です。"
-              photo={quickPhoto}
-              setPhoto={setQuickPhoto}
-              onNext={goQuickComplete}
-              nextLabel="これで完了にする"
-              onBack={() => setScreen("task")}
-            />
-          </View>
+          <SwipeBack onSwipeBack={() => setScreen("task")}>
+            <View style={styles.flexCol}>
+              <Header title="今日はここまで" />
+              <PhotoStep
+                subheading="写真を1枚撮るだけでも、記録になります。かたづけしなくても大丈夫です。"
+                photo={quickPhoto}
+                setPhoto={setQuickPhoto}
+                onNext={goQuickComplete}
+                nextLabel="これで完了にする"
+                onBack={() => setScreen("task")}
+              />
+            </View>
+          </SwipeBack>
         )}
 
         {/* ---------------- QUICK COMPLETE ---------------- */}
@@ -781,6 +835,7 @@ export default function App() {
       </ScrollView>
     </SafeAreaView>
     </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
