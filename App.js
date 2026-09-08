@@ -22,7 +22,12 @@ import * as Haptics from "expo-haptics";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { captureRef } from "react-native-view-shot";
 import { NotificationSettingsScreen } from "./NotificationSettingsScreen";
-import { recordAppOpen, addNotificationOpenedListener } from "./storage";
+import { RobotVacuumSettingsScreen } from "./RobotVacuumSettingsScreen";
+import {
+  recordAppOpen,
+  addNotificationOpenedListener,
+  loadRobotVacuumPreferences,
+} from "./storage";
 import { runDailyNotificationJob } from "./dailyJob";
 import { CATEGORIES, CATEGORY_STYLE } from "./taskData";
 import { pickTaskForCategory } from "./taskPicker";
@@ -534,7 +539,9 @@ export default function App() {
 
   const chooseCategory = async (c) => {
     setCategory(c);
-    const t = await pickTaskForCategory(c.id);
+    // 選択のたびに最新の設定を読み直す（設定画面はApp.jsの状態を経由せず自分でstorageに保存するため）
+    const { robotVacuumStatus } = await loadRobotVacuumPreferences();
+    const t = await pickTaskForCategory(c.id, undefined, robotVacuumStatus);
     setTask(t);
     setScreen("task");
   };
@@ -543,7 +550,8 @@ export default function App() {
     if (!category) return;
     trackTaskSkipped();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    const t = await pickTaskForCategory(category.id, task?.id);
+    const { robotVacuumStatus } = await loadRobotVacuumPreferences();
+    const t = await pickTaskForCategory(category.id, task?.id, robotVacuumStatus);
     setTask(t);
   };
 
@@ -640,6 +648,7 @@ export default function App() {
             <View style={styles.flexCol}>
               <Header title="設定" />
               <NotificationSettingsScreen />
+              <RobotVacuumSettingsScreen />
               <View style={{ marginTop: 20 }}>
                 <GhostButton onPress={() => setScreen("category")}>もどる</GhostButton>
               </View>

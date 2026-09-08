@@ -10,6 +10,7 @@ import {
   DEFAULT_ROBOT_VACUUM_PREFERENCES,
   NotificationSettings,
   RobotVacuumPreferences,
+  RobotVacuumStatus,
   TaskStats,
   UserActivityState,
 } from './types';
@@ -261,6 +262,25 @@ export async function saveRobotVacuumPreferences(
   prefs: RobotVacuumPreferences
 ): Promise<void> {
   await AsyncStorage.setItem(ROBOT_VACUUM_PREFERENCES_KEY, JSON.stringify(prefs));
+}
+
+/**
+ * 設定画面からの明示的な操作でロボット掃除機利用状況を変更する（「未設定に戻す」も含む）。
+ * robotVacuumStatus / robotVacuumStatusUpdatedAt のみを更新し、
+ * ホーム画面バナーの再表示制御用状態（robotPromptDismissedAt,
+ * floorCategoryUseCountSinceLastPrompt）やhiddenTaskIdsには一切触れない。
+ * バナー側の「今は設定しない」（一時的にバナーを閉じる操作）とは独立した状態として扱うため。
+ */
+export function updateRobotVacuumStatus(
+  prefs: RobotVacuumPreferences,
+  status: RobotVacuumStatus,
+  now: Date = new Date()
+): RobotVacuumPreferences {
+  return {
+    ...prefs,
+    robotVacuumStatus: status,
+    robotVacuumStatusUpdatedAt: now.toISOString(),
+  };
 }
 
 export async function loadTaskStats(): Promise<TaskStats> {
