@@ -9,7 +9,8 @@ import {
   NoEligibleTaskError,
 } from './taskPicker';
 import { TASKS, Task } from './taskData';
-import { todayString } from './storage';
+import { todayString, loadTaskStats, saveTaskStats } from './storage';
+import { TaskStats } from './types';
 
 // taskPicker.ts内部の履歴保存キー（非公開）。テストでの直接検証のためここに複製する。
 const HISTORY_KEY = 'sukikata:taskHistory';
@@ -233,5 +234,105 @@ describe('pickTaskForCategory（hiddenTaskIdsによる除外・実装指示書2-
     await expect(
       pickTaskForCategory('desk', undefined, 'unset', allIds)
     ).rejects.toThrow(NoEligibleTaskError);
+  });
+});
+
+// ステップ6: クールダウン枯渇時のフォールバック優先順位（実装指示書2-7・9-3 Aケース）のテスト。
+// 「全タスクがクールダウン中」の場合、1.最終実施日が古い 2.スキップ率が低い
+// 3.表示回数が少ない、の優先順で1件を決定的に選ぶ（ランダム選択ではない）。
+describe('pickTaskForCategory（クールダウン枯渇時のフォールバック優先順位・Aケース）', () => {
+  beforeEach(async () => {
+    await AsyncStorage.clear();
+    jest.restoreAllMocks();
+  });
+
+  it('最終実施日が最も古いタスクが優先される', async () => {
+    // desk全5件をcooldown中にする（cooldownDays=14未満）が、実施日はそれぞれ異なる
+    const historyEntries: Record<string, string> = {
+      desk_001: daysAgoString(1),
+      desk_002: daysAgoString(5),
+      desk_003: daysAgoString(10),
+      desk_004: daysAgoString(2),
+      desk_005: daysAgoString(13), // 最も古い → 優先されるはず
+    };
+    await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(historyEntries));
+
+    const chosen = await pickTaskForCategory('desk');
+
+    expect(chosen.id).toBe('desk_005');
+  });
+
+  it('最終実施日が同じ場合はスキップ率が低いタスクが優先される', async () => {
+    const historyEntries: Record<string, string> = {};
+    for (const t of TASKS.desk) historyEntries[t.id] = daysAgoString(1);
+    await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(historyEntries));
+
+    // 全5件に明示的な統計を与える（未設定のタスクはskipRateが既定0扱いになり、
+    // 意図せず「desk_002より低いスキップ率」として比較に混ざってしまうのを防ぐため）
+    const stats: TaskStats = {
+      desk_001: { shownCount: 10, completedCount: 0, skippedCount: 8, lastShownAt: null }, // skipRate 0.8
+      desk_002: { shownCount: 10, completedCount: 0, skippedCount: 2, lastShownAt: null }, // skipRate 0.2 → 優先
+      desk_003: { shownCount: 10, completedCount: 0, skippedCount: 5, lastShownAt: null }, // skipRate 0.5
+      desk_004: { shownCount: 10, completedCount: 0, skippedCount: 9, lastShownAt: null }, // skipRate 0.9
+      desk_005: { shownCount: 10, completedCount: 0, skippedCount: 4, lastShownAt: null }, // skipRate 0.4
+    };
+    await saveTaskStats(stats);
+
+    const chosen = await pickTaskForCategory('desk');
+
+    expect(chosen.id).toBe('desk_002');
+  });
+
+  it('最終実施日・スキップ率が同じ場合は表示回数が少ないタスクが優先される', async () => {
+    const historyEntries: Record<string, string> = {};
+    for (const t of TASKS.desk) historyEntries[t.id] = daysAgoString(1);
+    await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(historyEntries));
+
+    // 全5件をskipRate 0（スキップ0件）に揃えたうえで、表示回数だけを変える
+    const stats: TaskStats = {
+      desk_001: { shownCount: 20, completedCount: 0, skippedCount: 0, lastShownAt: null },
+      desk_002: { shownCount: 3, completedCount: 0, skippedCount: 0, lastShownAt: null }, // 表示回数が最少 → 優先
+      desk_003: { shownCount: 15, completedCount: 0, skippedCount: 0, lastShownAt: null },
+      desk_004: { shownCount: 25, completedCount: 0, skippedCount: 0, lastShownAt: null },
+      desk_005: { shownCount: 10, completedCount: 0, skippedCount: 0, lastShownAt: null },
+    };
+    await saveTaskStats(stats);
+
+    const chosen = await pickTaskForCategory('desk');
+
+    expect(chosen.id).toBe('desk_002');
+  });
+
+  it('hiddenTaskIdsはフォールバック候補から引き続き除外される（ステップ5との整合性）', async () => {
+    const historyEntries: Record<string, string> = {};
+    for (const t of TASKS.desk) historyEntries[t.id] = daysAgoString(1);
+    await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(historyEntries));
+
+    // desk_001が最終実施日で並べても最優先になりうるよう細工しても、非表示なら除外されるはず
+    const stats: TaskStats = {
+      desk_001: { shownCount: 0, completedCount: 0, skippedCount: 0, lastShownAt: null },
+    };
+    await saveTaskStats(stats);
+
+    const chosen = await pickTaskForCategory('desk', undefined, 'unset', ['desk_001']);
+
+    expect(chosen.id).not.toBe('desk_001');
+  });
+
+  it('選択されたタスクのshownCountが記録され、lastShownAtが更新される', async () => {
+    const chosen = await pickTaskForCategory('desk');
+
+    const stats = await loadTaskStats();
+    expect(stats[chosen.id]?.shownCount).toBe(1);
+    expect(stats[chosen.id]?.lastShownAt).toEqual(expect.any(String));
+  });
+
+  it('excludeTaskIdで示されたタスクのskippedCountが加算される', async () => {
+    const target = TASKS.desk[0];
+
+    await pickTaskForCategory('desk', target.id);
+
+    const stats = await loadTaskStats();
+    expect(stats[target.id]?.skippedCount).toBe(1);
   });
 });

@@ -2,8 +2,8 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TASKS, Task } from './taskData';
-import { todayString } from './storage';
-import { RobotVacuumStatus } from './types';
+import { todayString, loadTaskStats, saveTaskStats } from './storage';
+import { RobotVacuumStatus, TaskStats } from './types';
 
 /**
  * owner/considering向けタスクの重みにかける倍率（暫定値）。
@@ -95,6 +95,80 @@ export function selectWeightedTask(pool: Task[], robotVacuumStatus: RobotVacuumS
 }
 
 /**
+ * クールダウン枯渇時のフォールバック（実装指示書2-7・9-3 Aケース）専用の決定的な選択。
+ * 通常選択（selectWeightedTask）とは別に、以下の優先順で1件を確定的に決める
+ * （ランダム要素は使わない）：
+ * 1. 最終実施日が古い（一度も表示していない場合を最優先＝最も古い扱い）
+ * 2. スキップ率が低い（表示回数が0の場合は0%扱い）
+ * 3. 表示回数が少ない
+ * 全て同点の場合は候補配列の先頭（=カテゴリ内の元の並び順）を採用する。
+ */
+function rankForCooldownFallback(
+  candidates: Task[],
+  history: TaskHistory,
+  stats: TaskStats
+): Task {
+  const scored = candidates.map((task) => {
+    const lastShownDate = history[task.id] ?? ''; // 空文字列＝未実施。日付文字列より必ず小さい
+    const entry = stats[task.id];
+    const shownCount = entry?.shownCount ?? 0;
+    const skippedCount = entry?.skippedCount ?? 0;
+    const skipRate = shownCount > 0 ? skippedCount / shownCount : 0;
+    return { task, lastShownDate, skipRate, shownCount };
+  });
+
+  scored.sort((a, b) => {
+    if (a.lastShownDate !== b.lastShownDate) {
+      return a.lastShownDate < b.lastShownDate ? -1 : 1;
+    }
+    if (a.skipRate !== b.skipRate) return a.skipRate - b.skipRate;
+    return a.shownCount - b.shownCount;
+  });
+
+  return scored[0].task;
+}
+
+/**
+ * 選択結果を暗黙の重み付け用の統計に記録する（実装指示書8-6）。
+ * chosenのshownCountを+1しlastShownAtを更新。skippedTaskIdが指定されていれば
+ * そのタスクのskippedCountを+1する（「別のタスクを見る」でスキップされた前回のタスク）。
+ */
+async function recordSelectionStats(
+  chosenId: string,
+  skippedTaskId: string | undefined
+): Promise<void> {
+  const stats = await loadTaskStats();
+  const next: TaskStats = { ...stats };
+
+  const chosenEntry = next[chosenId] ?? {
+    shownCount: 0,
+    completedCount: 0,
+    skippedCount: 0,
+    lastShownAt: null,
+  };
+  next[chosenId] = {
+    ...chosenEntry,
+    shownCount: chosenEntry.shownCount + 1,
+    lastShownAt: new Date().toISOString(),
+  };
+
+  if (skippedTaskId) {
+    const skippedEntry = next[skippedTaskId] ?? {
+      shownCount: 0,
+      completedCount: 0,
+      skippedCount: 0,
+      lastShownAt: null,
+    };
+    next[skippedTaskId] = {
+      ...skippedEntry,
+      skippedCount: skippedEntry.skippedCount + 1,
+    };
+  }
+
+  await saveTaskStats(next);
+}
+
+/**
  * 指定カテゴリから、直近 cooldownDays 以内に出していないタスクを1件選ぶ。
  * 全タスクがクールダウン中の場合は、そのカテゴリ全体から選び直す（表示を止めないため）。
  * excludeTaskId を指定すると、そのタスク以外から選ぶ（「ほかのかたづけをする」で
@@ -105,7 +179,11 @@ export function selectWeightedTask(pool: Task[], robotVacuumStatus: RobotVacuumS
  * （実装指示書2-3手順3）。この除外はcooldown枯渇時のフォールバックより優先されるため、
  * 全タスクがクールダウン中でも非表示タスクが再提示されることはない。
  * 非表示設定によって候補が0件になった場合は NoEligibleTaskError を投げる
- * （自動解除はしない。呼び出し側での案内表示は次のステップで対応）。
+ * （実装指示書2-7 Bケース。自動解除はしない。呼び出し側での案内表示は別途対応）。
+ *
+ * 候補が非表示ではないがカテゴリ内全件クールダウン中の場合（2-7 Aケース）は、
+ * 通常の重み付きランダム選択ではなく rankForCooldownFallback による決定的な優先順位選択に切り替わる
+ * （最終実施日→スキップ率→表示回数の順。この分岐では robotVacuumStatus による重み付けは適用しない）。
  */
 export async function pickTaskForCategory(
   categoryId: string,
@@ -128,13 +206,24 @@ export async function pickTaskForCategory(
     return daysSince(last, today) >= t.cooldownDays;
   });
 
-  let eligible = notCoolingDown.length ? notCoolingDown : visiblePool;
-  if (excludeTaskId && eligible.length > 1) {
-    eligible = eligible.filter((t) => t.id !== excludeTaskId);
+  let chosen: Task;
+  if (notCoolingDown.length) {
+    let eligible = notCoolingDown;
+    if (excludeTaskId && eligible.length > 1) {
+      eligible = eligible.filter((t) => t.id !== excludeTaskId);
+    }
+    chosen = selectWeightedTask(eligible, robotVacuumStatus);
+  } else {
+    // Aケース：非表示ではない候補はあるが全件クールダウン中 → 優先順位に基づき決定的に選ぶ
+    let candidates = visiblePool;
+    if (excludeTaskId && candidates.length > 1) {
+      candidates = candidates.filter((t) => t.id !== excludeTaskId);
+    }
+    const stats = await loadTaskStats();
+    chosen = rankForCooldownFallback(candidates, history, stats);
   }
 
-  const chosen = selectWeightedTask(eligible, robotVacuumStatus);
-
   await saveTaskHistory({ ...history, [chosen.id]: today });
+  await recordSelectionStats(chosen.id, excludeTaskId);
   return chosen;
 }
