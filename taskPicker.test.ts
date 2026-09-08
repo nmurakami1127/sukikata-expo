@@ -8,6 +8,9 @@ import {
   selectWeightedTask,
   NoEligibleTaskError,
   hideTaskAndPickReplacement,
+  NO_ELIGIBLE_TASK_MESSAGE,
+  NO_ELIGIBLE_TASK_OPTION_OTHER_PLACE,
+  NO_ELIGIBLE_TASK_OPTION_REVIEW_HIDDEN,
 } from './taskPicker';
 import { TASKS, Task } from './taskData';
 import {
@@ -392,5 +395,19 @@ describe('hideTaskAndPickReplacement（「今後出さない」選択後の一�
     // エラーになっても「非表示にする」設定自体は保存されている（自動解除しない）
     const prefs = await loadRobotVacuumPreferences();
     expect(prefs.hiddenTaskIds.sort()).toEqual([...ids].sort());
+  });
+});
+
+// ステップ6残タスク：Case B（非表示による候補枯渇）の案内文言（実装指示書2-7・9-3 B）。
+// App.js自体はJestで直接テストできないため、Alert.alertが参照する文言を
+// エクスポート定数として切り出し、指示書記載の文言と一致することを固定する。
+describe('NoEligibleTaskError案内文言（実装指示書9-3 B）', () => {
+  it('メッセージは指示書記載の「今出せるタスクが少なくなっています。」と一致する', () => {
+    expect(NO_ELIGIBLE_TASK_MESSAGE).toBe('今出せるタスクが少なくなっています。');
+  });
+
+  it('選択肢は指示書記載の「他の場所を見る」「出さない設定を見直す」と一致する', () => {
+    expect(NO_ELIGIBLE_TASK_OPTION_OTHER_PLACE).toBe('他の場所を見る');
+    expect(NO_ELIGIBLE_TASK_OPTION_REVIEW_HIDDEN).toBe('出さない設定を見直す');
   });
 });

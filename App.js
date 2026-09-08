@@ -38,6 +38,9 @@ import {
   pickTaskForCategory,
   hideTaskAndPickReplacement,
   NoEligibleTaskError,
+  NO_ELIGIBLE_TASK_MESSAGE,
+  NO_ELIGIBLE_TASK_OPTION_OTHER_PLACE,
+  NO_ELIGIBLE_TASK_OPTION_REVIEW_HIDDEN,
 } from "./taskPicker";
 import {
   RECOMMEND_ORDER,
@@ -637,6 +640,11 @@ export default function App() {
   const [helpBadgeSeen, setHelpBadgeSeen] = useState(true);
   const [previousScreen, setPreviousScreen] = useState("category");
 
+  // 「出さない設定を見直す」タップ時、設定画面へ遷移したあとHiddenTasksSettingsScreenの
+  // 位置まで自動スクロールするための座標保持（カテゴリグリッドへのスクロールと同じ仕組み）
+  const hiddenTasksSectionYRef = useRef(0);
+  const [scrollToHiddenTasksPending, setScrollToHiddenTasksPending] = useState(false);
+
   const notify = useCallback(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
   }, []);
@@ -684,6 +692,29 @@ export default function App() {
 
   const scrollToPlaceGrid = () => {
     scrollViewRef.current?.scrollTo({ y: gridYRef.current, animated: true });
+  };
+
+  // NoEligibleTaskError（実装指示書2-7・9-3 Bケース：非表示設定による候補枯渇）の案内。
+  // 圧をかけないメッセージ＋2つの選択肢のみ。hiddenTaskIdsの自動解除はしない。
+  const showNoEligibleTaskAlert = () => {
+    Alert.alert(NO_ELIGIBLE_TASK_MESSAGE, undefined, [
+      { text: NO_ELIGIBLE_TASK_OPTION_OTHER_PLACE, onPress: () => setScreen("category") },
+      {
+        text: NO_ELIGIBLE_TASK_OPTION_REVIEW_HIDDEN,
+        onPress: () => {
+          setScrollToHiddenTasksPending(true);
+          setScreen("settings");
+        },
+      },
+    ]);
+  };
+
+  const onHiddenTasksSectionLayout = (y) => {
+    hiddenTasksSectionYRef.current = y;
+    if (scrollToHiddenTasksPending) {
+      scrollViewRef.current?.scrollTo({ y, animated: true });
+      setScrollToHiddenTasksPending(false);
+    }
   };
 
   const recommendedCategory = lastPlaceLoaded
@@ -788,8 +819,8 @@ export default function App() {
       setScreen("task");
     } catch (e) {
       if (e instanceof NoEligibleTaskError) {
-        // 暫定対応：候補が非表示設定で尽きた場合の案内UIは次の対応で追加する。
-        // それまではカテゴリ選択画面に留まる（screenは既に"category"のまま）。
+        // screenは既に"category"のまま。案内アラートだけ重ねて表示する。
+        showNoEligibleTaskAlert();
         return;
       }
       throw e;
@@ -823,8 +854,8 @@ export default function App() {
       setTask(t);
     } catch (e) {
       if (e instanceof NoEligibleTaskError) {
-        // 暫定対応：候補が非表示設定で尽きた場合の案内UIは次の対応で追加する。
         setScreen("category");
+        showNoEligibleTaskAlert();
         return;
       }
       throw e;
@@ -840,8 +871,8 @@ export default function App() {
       setTask(t);
     } catch (e) {
       if (e instanceof NoEligibleTaskError) {
-        // 暫定対応：候補が非表示設定で尽きた場合の案内UIは次の対応で追加する。
         setScreen("category");
+        showNoEligibleTaskAlert();
         return;
       }
       throw e;
@@ -984,7 +1015,9 @@ export default function App() {
               <View style={styles.settingsRowDivider} />
               <NotificationSettingsScreen />
               <RobotVacuumSettingsScreen />
-              <HiddenTasksSettingsScreen />
+              <View onLayout={(e) => onHiddenTasksSectionLayout(e.nativeEvent.layout.y)}>
+                <HiddenTasksSettingsScreen />
+              </View>
               <View style={{ marginTop: 20 }}>
                 <GhostButton onPress={() => setScreen("category")}>もどる</GhostButton>
               </View>

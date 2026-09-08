@@ -60,6 +60,15 @@ export class NoEligibleTaskError extends Error {
   }
 }
 
+/**
+ * NoEligibleTaskError（実装指示書2-7・9-3 Bケース）発生時にUI側が表示する案内文言。
+ * 圧をかけない表現・具体的な選択肢という指示書の文言をそのまま定数化し、
+ * App.js側（Jestで直接テストできない）とテストの両方から同じ値を参照する。
+ */
+export const NO_ELIGIBLE_TASK_MESSAGE = '今出せるタスクが少なくなっています。';
+export const NO_ELIGIBLE_TASK_OPTION_OTHER_PLACE = '他の場所を見る';
+export const NO_ELIGIBLE_TASK_OPTION_REVIEW_HIDDEN = '出さない設定を見直す';
+
 /** ユーザー属性から、優先すべきaudience値を返す。unsetの場合はnull（フィルタなし） */
 function audienceForStatus(
   status: RobotVacuumStatus
