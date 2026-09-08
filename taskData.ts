@@ -5,6 +5,14 @@ export interface Task {
   title: string;
   note: string;
   cooldownDays: number;
+  // ここから任意フィールド（次期リリース：ロボット掃除機パーソナライズ用）。
+  // 省略された既存タスクはそのまま動作する（後方互換）。
+  /** 分析用途のみ。タスク選択のフィルタリングには使わない */
+  tags?: string[];
+  /** 優先して提示する対象。省略時は ["all"] 扱い */
+  audiences?: string[];
+  /** 表示優先度の重み。省略時は 1 */
+  weight?: number;
 }
 
 export interface Category {
@@ -69,7 +77,7 @@ export const TASKS: Record<string, Task[]> = {
   ],
   entrance: [
     { id: 'entrance_001', title: '靴を2足だけ靴箱にしまう', note: '全部でなく2足から', cooldownDays: 14 },
-    { id: 'entrance_002', title: '玄関マットの砂・ゴミを払う', note: 'サッとで良い', cooldownDays: 14 },
+    { id: 'entrance_002', title: '玄関マットの砂・ゴミを払う', note: 'サッとでOK', cooldownDays: 14 },
     { id: 'entrance_003', title: '郵便物・チラシを1箇所にまとめる', note: '仕分け不要', cooldownDays: 14 },
     { id: 'entrance_004', title: '傘立ての傘を整える', note: '壊れた傘があれば1本だけ処分', cooldownDays: 14 },
   ],
