@@ -9,7 +9,8 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "autoIncrement": true
     },
     "production": {
       "autoIncrement": true
@@ -20,7 +21,8 @@
       "ios": {
         "ascApiKeyPath": "./secrets/AuthKey_YYMQ276FU3.p8",
         "ascApiKeyId": "YYMQ276FU3",
-        "ascApiKeyIssuerId": "8f59ff9b-c38f-440c-aeb6-835b367e0fed"
+        "ascApiKeyIssuerId": "8f59ff9b-c38f-440c-aeb6-835b367e0fed",
+        "ascAppId": "6799003966"
       }
     }
   }

@@ -20,7 +20,7 @@ export const DAILY_MESSAGES: DailyMessage[] = [
   { id: 'daily_1', text: '今日も5分だけ、いかがですか。' },
   { id: 'daily_2', text: 'すきま時間、見つかりましたか？' },
   { id: 'daily_3', text: '5分だけ、今いる場所から。' },
-  { id: 'daily_4', text: '今日はどこにしましょうか。ちょっとだけ、片付けの時間です。' },
+  { id: 'daily_4', text: '今日はどこにしましょうか。ちょっとだけ、かたづけの時間です。' },
   {
     id: 'daily_5_after_rest',
     text: '昨日はお休みでも大丈夫。今日、また始めましょう。',
@@ -32,7 +32,7 @@ export const AFTER_REST_MESSAGE_ID = 'daily_5_after_rest';
 
 export const ONBOARDING_FOLLOWUP_COPY = {
   day1: '昨日はインストールだけで十分です。今日、1つだけやってみませんか。',
-  day3: '「片付けなきゃ」より先に、5分だけ試してみませんか。',
+  day3: '「かたづけなきゃ」より先に、5分だけ試してみませんか。',
 };
 
 export const DORMANT_REENGAGEMENT_COPY = {
