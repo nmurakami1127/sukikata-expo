@@ -2,7 +2,7 @@
 // タスク内容そのものではなく、実装指示書の受け入れ条件・要件（ID一意性、
 // audiences構成、件数目安、NG表現の不使用）を固定するためのテスト。
 
-import { TASKS, Task } from './taskData';
+import { TASKS, Task, findTaskById } from './taskData';
 
 const ALL_TASKS: Task[] = Object.values(TASKS).flat();
 
@@ -55,5 +55,18 @@ describe('taskData（ロボット掃除機関連タスクの投入・実装指�
         expect(t.note).not.toContain(phrase);
       }
     }
+  });
+});
+
+describe('findTaskById（「出さない設定にしたタスク」一覧でのタイトル解決に使用）', () => {
+  it('カテゴリをまたいで、IDからタスクを見つけられる', () => {
+    expect(findTaskById('floor_robot_016')).toEqual(
+      TASKS.floor.find((t) => t.id === 'floor_robot_016')
+    );
+    expect(findTaskById('desk_001')).toEqual(TASKS.desk[0]);
+  });
+
+  it('存在しないIDにはundefinedを返す', () => {
+    expect(findTaskById('not_a_real_task_id')).toBeUndefined();
   });
 });

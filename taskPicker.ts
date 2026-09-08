@@ -40,6 +40,19 @@ function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+/**
+ * カテゴリ内の全タスクが「今後出さない」設定で除外され、候補が0件になったときに投げる。
+ * 実装指示書2-7（フォールバックロジック、ステップ6）のB.「今後出さない」による不足に
+ * 対応するためのシグナル。ここでは自動解除・代替提示は行わない
+ * （呼び出し側がこのエラーを捕捉して案内を出す設計は次のステップで対応する）。
+ */
+export class NoEligibleTaskError extends Error {
+  constructor(categoryId: string) {
+    super(`No eligible tasks in category "${categoryId}" after hiddenTaskIds exclusion`);
+    this.name = 'NoEligibleTaskError';
+  }
+}
+
 /** ユーザー属性から、優先すべきaudience値を返す。unsetの場合はnull（フィルタなし） */
 function audienceForStatus(
   status: RobotVacuumStatus
@@ -88,23 +101,34 @@ export function selectWeightedTask(pool: Task[], robotVacuumStatus: RobotVacuumS
  * 同じタスクが連続して出るのを防ぐため）。カテゴリに1件しかない場合は無視される。
  * robotVacuumStatus を指定すると、該当ユーザー向けタスクの選択優先度が上がる
  * （省略時は 'unset' 扱いで既存MVPと同じ挙動）。
+ * hiddenTaskIds を指定すると、「今後出さない」設定されたタスクを候補から除外する
+ * （実装指示書2-3手順3）。この除外はcooldown枯渇時のフォールバックより優先されるため、
+ * 全タスクがクールダウン中でも非表示タスクが再提示されることはない。
+ * 非表示設定によって候補が0件になった場合は NoEligibleTaskError を投げる
+ * （自動解除はしない。呼び出し側での案内表示は次のステップで対応）。
  */
 export async function pickTaskForCategory(
   categoryId: string,
   excludeTaskId?: string,
-  robotVacuumStatus: RobotVacuumStatus = 'unset'
+  robotVacuumStatus: RobotVacuumStatus = 'unset',
+  hiddenTaskIds: string[] = []
 ): Promise<Task> {
   const pool = TASKS[categoryId] ?? [];
+  const visiblePool = pool.filter((t) => !hiddenTaskIds.includes(t.id));
+  if (visiblePool.length === 0) {
+    throw new NoEligibleTaskError(categoryId);
+  }
+
   const history = await loadTaskHistory();
   const today = todayString();
 
-  const notCoolingDown = pool.filter((t) => {
+  const notCoolingDown = visiblePool.filter((t) => {
     const last = history[t.id];
     if (!last) return true;
     return daysSince(last, today) >= t.cooldownDays;
   });
 
-  let eligible = notCoolingDown.length ? notCoolingDown : pool;
+  let eligible = notCoolingDown.length ? notCoolingDown : visiblePool;
   if (excludeTaskId && eligible.length > 1) {
     eligible = eligible.filter((t) => t.id !== excludeTaskId);
   }

@@ -23,6 +23,7 @@ import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { captureRef } from "react-native-view-shot";
 import { NotificationSettingsScreen } from "./NotificationSettingsScreen";
 import { RobotVacuumSettingsScreen } from "./RobotVacuumSettingsScreen";
+import { HiddenTasksSettingsScreen } from "./HiddenTasksSettingsScreen";
 import {
   recordAppOpen,
   addNotificationOpenedListener,
@@ -649,6 +650,7 @@ export default function App() {
               <Header title="設定" />
               <NotificationSettingsScreen />
               <RobotVacuumSettingsScreen />
+              <HiddenTasksSettingsScreen />
               <View style={{ marginTop: 20 }}>
                 <GhostButton onPress={() => setScreen("category")}>もどる</GhostButton>
               </View>

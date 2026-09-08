@@ -283,6 +283,33 @@ export function updateRobotVacuumStatus(
   };
 }
 
+/**
+ * 「このタスクは今後出さない」を選択したときに呼ぶ。指定タスクIDをhiddenTaskIdsに追加する
+ * （重複追加はしない）。それ以外のフィールドには触れない。
+ */
+export function hideTask(
+  prefs: RobotVacuumPreferences,
+  taskId: string
+): RobotVacuumPreferences {
+  if (prefs.hiddenTaskIds.includes(taskId)) return prefs;
+  return { ...prefs, hiddenTaskIds: [...prefs.hiddenTaskIds, taskId] };
+}
+
+/**
+ * 設定画面の「出さない設定にしたタスク」一覧から解除するときに呼ぶ。
+ * 指定タスクIDをhiddenTaskIdsから取り除く。候補不足を理由にアプリ側が自動的に
+ * 呼び出すことはない（実装指示書2-6：自動解除はしない）。
+ */
+export function unhideTask(
+  prefs: RobotVacuumPreferences,
+  taskId: string
+): RobotVacuumPreferences {
+  return {
+    ...prefs,
+    hiddenTaskIds: prefs.hiddenTaskIds.filter((id) => id !== taskId),
+  };
+}
+
 export async function loadTaskStats(): Promise<TaskStats> {
   const raw = await AsyncStorage.getItem(TASK_STATS_KEY);
   if (!raw) return {};

@@ -266,3 +266,12 @@ export const TASKS: Record<string, Task[]> = {
     { id: 'digital_003', title: 'デスクトップのアイコンを3つだけ整理', note: 'デジタル散らかりにも対応', cooldownDays: 14 },
   ],
 };
+
+/** カテゴリをまたいでIDからタスクを探す（「出さない設定にしたタスク」一覧のタイトル解決に使用） */
+export function findTaskById(taskId: string): Task | undefined {
+  for (const pool of Object.values(TASKS)) {
+    const found = pool.find((t) => t.id === taskId);
+    if (found) return found;
+  }
+  return undefined;
+}

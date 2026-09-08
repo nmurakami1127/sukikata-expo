@@ -3,7 +3,11 @@
 // 現状の挙動をこのテストで固定しておく。
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { pickTaskForCategory, selectWeightedTask } from './taskPicker';
+import {
+  pickTaskForCategory,
+  selectWeightedTask,
+  NoEligibleTaskError,
+} from './taskPicker';
 import { TASKS, Task } from './taskData';
 import { todayString } from './storage';
 
@@ -171,5 +175,63 @@ describe('selectWeightedTask（実装指示書2-3：属性フィルタの受け�
         SAMPLE_POOL.length;
       expect(matchingCount / TRIALS).toBeGreaterThan(uniformBaselineShare);
     });
+  });
+});
+
+// ステップ5: 「今後出さない」（実装指示書2-6、選択ロジック手順3のhiddenTaskIds除外）のテスト。
+describe('pickTaskForCategory（hiddenTaskIdsによる除外・実装指示書2-6）', () => {
+  beforeEach(async () => {
+    await AsyncStorage.clear();
+    jest.restoreAllMocks();
+  });
+
+  it('hiddenTaskIdsに含まれるタスクは選ばれない', async () => {
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+    const [hidden, ...rest] = TASKS.desk;
+
+    const chosen = await pickTaskForCategory('desk', undefined, 'unset', [hidden.id]);
+
+    // 除外後の先頭（rest[0]）が選ばれるはず
+    expect(chosen.id).toBe(rest[0].id);
+    expect(chosen.id).not.toBe(hidden.id);
+  });
+
+  it('cooldown枯渇によるフォールバックでも、非表示タスクは再提示されない（受け入れ条件）', async () => {
+    // desk全件をcooldown中にしておく → 通常なら「カテゴリ全体から選び直す」フォールバックが働く
+    const historyEntries: Record<string, string> = {};
+    for (const t of TASKS.desk) {
+      historyEntries[t.id] = daysAgoString(1);
+    }
+    await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(historyEntries));
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+    const [hidden, ...rest] = TASKS.desk;
+
+    const chosen = await pickTaskForCategory('desk', undefined, 'unset', [hidden.id]);
+
+    // フォールバック先は「非表示を除いたプール」であるべきで、元の全件プールに戻ってはいけない
+    expect(chosen.id).not.toBe(hidden.id);
+    expect(chosen.id).toBe(rest[0].id);
+  });
+
+  it('通常のスキップ（excludeTaskIdのみ）はhiddenTaskIdsに影響しない：別呼び出しでは再び選ばれうる', async () => {
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+    const target = TASKS.desk[0];
+
+    // 1回目：targetを除外して選ぶ（「ほかのかたづけをする」相当。hiddenTaskIdsは空のまま）
+    const first = await pickTaskForCategory('desk', target.id, 'unset', []);
+    expect(first.id).not.toBe(target.id);
+
+    // 2回目：excludeTaskIdを指定しない通常選択では、targetも候補に戻る
+    // （Math.random(0)で先頭が選ばれる設定なので、targetが再び候補プールの先頭であれば選ばれるはず）
+    const second = await pickTaskForCategory('desk', undefined, 'unset', []);
+    expect(second.id).toBe(target.id);
+  });
+
+  it('カテゴリ内全タスクが非表示の場合はNoEligibleTaskErrorを投げる（候補プール完全枯渇）', async () => {
+    const allIds = TASKS.desk.map((t) => t.id);
+
+    await expect(
+      pickTaskForCategory('desk', undefined, 'unset', allIds)
+    ).rejects.toThrow(NoEligibleTaskError);
   });
 });

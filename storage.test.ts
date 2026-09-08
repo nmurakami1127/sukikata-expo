@@ -2,7 +2,7 @@
 // バナーの再表示制御用状態（robotPromptDismissedAt / floorCategoryUseCountSinceLastPrompt）や
 // hiddenTaskIdsには一切触れない、という要件を固定するためのテスト。
 
-import { updateRobotVacuumStatus } from './storage';
+import { updateRobotVacuumStatus, hideTask, unhideTask } from './storage';
 import { RobotVacuumPreferences } from './types';
 
 describe('updateRobotVacuumStatus（設定画面からのロボット掃除機利用状況の変更）', () => {
@@ -63,5 +63,62 @@ describe('updateRobotVacuumStatus（設定画面からのロボット掃除機�
     const updatedAtMs = new Date(next.robotVacuumStatusUpdatedAt as string).getTime();
     expect(updatedAtMs).toBeGreaterThanOrEqual(before);
     expect(updatedAtMs).toBeLessThanOrEqual(after);
+  });
+});
+
+// hideTask/unhideTask（「今後出さない」の追加・解除、実装指示書2-6）のテスト。
+describe('hideTask / unhideTask（「今後出さない」の追加・解除）', () => {
+  const basePrefs: RobotVacuumPreferences = {
+    robotVacuumStatus: 'owner',
+    robotVacuumStatusUpdatedAt: '2026-01-01T00:00:00.000Z',
+    robotPromptDismissedAt: null,
+    floorCategoryUseCountSinceLastPrompt: 0,
+    hiddenTaskIds: ['floor_001'],
+  };
+
+  it('hideTaskは指定タスクIDをhiddenTaskIdsに追加する', () => {
+    const next = hideTask(basePrefs, 'floor_002');
+
+    expect(next.hiddenTaskIds).toEqual(['floor_001', 'floor_002']);
+  });
+
+  it('hideTaskは既に非表示のタスクIDを重複追加しない', () => {
+    const next = hideTask(basePrefs, 'floor_001');
+
+    expect(next.hiddenTaskIds).toEqual(['floor_001']);
+  });
+
+  it('hideTaskはhiddenTaskIds以外のフィールドに触れない', () => {
+    const next = hideTask(basePrefs, 'floor_002');
+
+    expect(next.robotVacuumStatus).toBe(basePrefs.robotVacuumStatus);
+    expect(next.robotVacuumStatusUpdatedAt).toBe(basePrefs.robotVacuumStatusUpdatedAt);
+    expect(next.robotPromptDismissedAt).toBe(basePrefs.robotPromptDismissedAt);
+    expect(next.floorCategoryUseCountSinceLastPrompt).toBe(
+      basePrefs.floorCategoryUseCountSinceLastPrompt
+    );
+  });
+
+  it('unhideTaskは指定タスクIDをhiddenTaskIdsから取り除く', () => {
+    const next = unhideTask(basePrefs, 'floor_001');
+
+    expect(next.hiddenTaskIds).toEqual([]);
+  });
+
+  it('unhideTaskは存在しないタスクIDを指定してもエラーにならず、他のIDに影響しない', () => {
+    const next = unhideTask(basePrefs, 'not_hidden_task');
+
+    expect(next.hiddenTaskIds).toEqual(basePrefs.hiddenTaskIds);
+  });
+
+  it('unhideTaskはhiddenTaskIds以外のフィールドに触れない', () => {
+    const next = unhideTask(basePrefs, 'floor_001');
+
+    expect(next.robotVacuumStatus).toBe(basePrefs.robotVacuumStatus);
+    expect(next.robotVacuumStatusUpdatedAt).toBe(basePrefs.robotVacuumStatusUpdatedAt);
+    expect(next.robotPromptDismissedAt).toBe(basePrefs.robotPromptDismissedAt);
+    expect(next.floorCategoryUseCountSinceLastPrompt).toBe(
+      basePrefs.floorCategoryUseCountSinceLastPrompt
+    );
   });
 });
