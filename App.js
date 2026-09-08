@@ -9,6 +9,7 @@ import {
   Animated,
   Alert,
   ScrollView,
+  AppState,
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import {
@@ -27,11 +28,21 @@ import { HiddenTasksSettingsScreen } from "./HiddenTasksSettingsScreen";
 import {
   recordAppOpen,
   addNotificationOpenedListener,
+  scheduleTimerCompletionNotification,
+  cancelTimerCompletionNotification,
   loadRobotVacuumPreferences,
 } from "./storage";
 import { runDailyNotificationJob } from "./dailyJob";
 import { CATEGORIES, CATEGORY_STYLE } from "./taskData";
 import { pickTaskForCategory } from "./taskPicker";
+import {
+  RECOMMEND_ORDER,
+  loadLastPlace,
+  saveLastPlace,
+  computeInitialRecommendation,
+  nextRecommendationIndex,
+} from "./recommendation";
+import { loadHelpBadgeSeen, markHelpBadgeSeen } from "./helpGuide";
 import {
   initAnalytics,
   trackTaskCompleted,
@@ -156,27 +167,32 @@ function SwipeBack({ onSwipeBack, children }) {
   );
 }
 
-function Header({ title, onSettingsPress, onHistoryPress }) {
-  const hasRightButtons = onSettingsPress || onHistoryPress;
+const HIT_SLOP = { top: 8, bottom: 8, left: 6, right: 6 };
+
+function Header({ title, onSettingsPress, onHistoryPress, onHelpPress, showHelpBadge }) {
+  const hasRightButtons = onSettingsPress || onHistoryPress || onHelpPress;
   return (
     <View style={styles.header}>
-      <View style={{ width: 34 }} />
       <Text style={styles.headerTitle}>{title}</Text>
-      {hasRightButtons ? (
+      {hasRightButtons && (
         <View style={styles.headerActions}>
           {onHistoryPress && (
-            <TouchableOpacity onPress={onHistoryPress} style={styles.historyBtn}>
+            <TouchableOpacity onPress={onHistoryPress} style={styles.historyBtn} hitSlop={HIT_SLOP}>
               <Text style={styles.historyBtnText}>記録</Text>
             </TouchableOpacity>
           )}
+          {onHelpPress && (
+            <TouchableOpacity onPress={onHelpPress} style={styles.settingsBtn} hitSlop={HIT_SLOP}>
+              <Text style={styles.helpIcon}>?</Text>
+              {showHelpBadge && <View style={styles.helpBadgeDot} />}
+            </TouchableOpacity>
+          )}
           {onSettingsPress && (
-            <TouchableOpacity onPress={onSettingsPress} style={styles.settingsBtn}>
+            <TouchableOpacity onPress={onSettingsPress} style={styles.settingsBtn} hitSlop={HIT_SLOP}>
               <Text style={styles.settingsIcon}>⚙️</Text>
             </TouchableOpacity>
           )}
         </View>
-      ) : (
-        <View style={{ width: 34 }} />
       )}
     </View>
   );
@@ -191,10 +207,15 @@ function PrimaryButton({ children, onPress }) {
   );
 }
 
-function GhostButton({ children, onPress }) {
+function GhostButton({ children, onPress, disabled }) {
   return (
-    <TouchableOpacity style={styles.ghostBtn} onPress={onPress} activeOpacity={0.7}>
-      <Text style={styles.ghostBtnText}>{children}</Text>
+    <TouchableOpacity
+      style={[styles.ghostBtn, disabled && styles.ghostBtnDisabled]}
+      onPress={onPress}
+      activeOpacity={0.7}
+      disabled={disabled}
+    >
+      <Text style={[styles.ghostBtnText, disabled && styles.ghostBtnTextDisabled]}>{children}</Text>
     </TouchableOpacity>
   );
 }
@@ -209,7 +230,7 @@ function PhotoStep({ subheading, photo, setPhoto, onNext, nextLabel, onBack }) {
       {!photo ? (
         <TouchableOpacity style={styles.cameraWell} onPress={handlePick} activeOpacity={0.8}>
           <View style={styles.cameraDot}>
-            <Text style={{ fontSize: 22 }}>📷</Text>
+            <Text style={{ fontSize: 34 }}>📷</Text>
           </View>
           <Text style={styles.cameraWellText}>タップして追加する</Text>
         </TouchableOpacity>
@@ -358,56 +379,85 @@ function CategoryChip({ id, label }) {
   );
 }
 
-function HomeIllustration() {
+function RecommendationCard({ category, onStart, onReroll, guidance, onGuidancePress }) {
+  const style = CATEGORY_STYLE[category.id];
   return (
-    <View style={styles.illustrationWrap}>
-      <Svg width={110} height={80} viewBox="0 0 168 122" fill="none">
-        <Circle cx="24" cy="22" r="5" fill={C.mustard} opacity="0.3" />
-        <Circle cx="146" cy="18" r="4" fill={C.coral} opacity="0.35" />
-        <Circle cx="150" cy="96" r="6" fill={C.sage} opacity="0.22" />
-
-        <Rect x="28" y="70" width="46" height="42" rx="9" fill={C.well} stroke={C.wellBorder} strokeWidth="2" />
-        <Rect x="94" y="70" width="46" height="42" rx="9" fill={C.well} stroke={C.wellBorder} strokeWidth="2" />
-
-        <Path d="M84 74 C84 54, 84 42, 84 22" stroke={C.sage} strokeWidth="4" strokeLinecap="round" />
-        <Path d="M84 36 C84 26, 74 20, 62 22" stroke={C.sage} strokeWidth="4" strokeLinecap="round" fill="none" />
-        <Path d="M84 48 C84 38, 96 33, 108 35" stroke={C.sage} strokeWidth="4" strokeLinecap="round" fill="none" />
-
-        <Circle cx="84" cy="18" r="7" fill={C.coral} />
-      </Svg>
+    <View style={styles.recommendCard}>
+      <Text style={styles.recommendLabel}>今日のおすすめ</Text>
+      <View style={styles.recommendPlaceRow}>
+        <View style={[styles.recommendIconBadge, { backgroundColor: style.bg }]}>
+          <CategoryIcon id={category.id} color={style.accent} size={28} />
+        </View>
+        <Text style={styles.recommendPlaceName}>{category.label}</Text>
+      </View>
+      {!guidance && (
+        <TouchableOpacity onPress={onReroll} activeOpacity={0.7} style={styles.taskRerollChip}>
+          <Text style={styles.taskRerollChipText}>↺ べつの場所にする</Text>
+        </TouchableOpacity>
+      )}
+      <PrimaryButton onPress={onStart}>この場所にする</PrimaryButton>
+      {guidance && (
+        <TouchableOpacity onPress={onGuidancePress} activeOpacity={0.7}>
+          <Text style={styles.recommendGuidanceText}>気になる場所を下から選んでみましょう ↓</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
 
-function CategoryScreen({ onSelect, onSettingsPress, onHistoryPress }) {
+function CategoryScreen({
+  onSelect,
+  onSettingsPress,
+  onHistoryPress,
+  onHelpPress,
+  showHelpBadge,
+  recommendedCategory,
+  onRerollRecommendation,
+  recommendGuidance,
+  onGuidancePress,
+  onGridLayout,
+}) {
   return (
     <View style={styles.flexCol}>
       <Header
-        title="どこを片付ける？"
+        title="どこをかたづける？"
         onSettingsPress={onSettingsPress}
         onHistoryPress={onHistoryPress}
+        onHelpPress={onHelpPress}
+        showHelpBadge={showHelpBadge}
       />
-      <Text style={styles.categoryIntro}>今いる場所を選んで、5分だけ片付けましょう。</Text>
-      <HomeIllustration />
-      <View style={styles.categoryGrid}>
-        {CATEGORIES.map((c) => {
-          const style = CATEGORY_STYLE[c.id];
-          return (
-            <TouchableOpacity
-              key={c.id}
-              style={[styles.categoryCard, { backgroundColor: style.bg }]}
-              onPress={() => onSelect(c)}
-              activeOpacity={0.85}
-            >
-              <View style={styles.categoryIconBadge}>
-                <CategoryIcon id={c.id} color={style.accent} />
-              </View>
-              <Text style={styles.categoryCardText} numberOfLines={1}>
-                {c.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+      <Text style={styles.categoryIntro}>5分だけ、かたづけをはじめましょう。</Text>
+      {recommendedCategory && (
+        <RecommendationCard
+          category={recommendedCategory}
+          onStart={() => onSelect(recommendedCategory)}
+          onReroll={onRerollRecommendation}
+          guidance={recommendGuidance}
+          onGuidancePress={onGuidancePress}
+        />
+      )}
+      <View onLayout={(e) => onGridLayout(e.nativeEvent.layout.y)}>
+        <Text style={styles.gridHeading}>または好きな場所を選ぶ</Text>
+        <View style={styles.categoryGrid}>
+          {CATEGORIES.map((c) => {
+            const style = CATEGORY_STYLE[c.id];
+            return (
+              <TouchableOpacity
+                key={c.id}
+                style={[styles.categoryCard, { backgroundColor: style.bg }]}
+                onPress={() => onSelect(c)}
+                activeOpacity={0.85}
+              >
+                <View style={styles.categoryIconBadge}>
+                  <CategoryIcon id={c.id} color={style.accent} />
+                </View>
+                <Text style={styles.categoryCardText} numberOfLines={1}>
+                  {c.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
     </View>
   );
@@ -418,7 +468,7 @@ function formatHistoryDate(dateString) {
   return `${parseInt(m, 10)}月${parseInt(d, 10)}日`;
 }
 
-function HistoryScreen({ onBack }) {
+function HistoryScreen({ onBack, onSettingsPress, onHelpPress }) {
   const [days, setDays] = useState(null);
 
   useEffect(() => {
@@ -427,11 +477,13 @@ function HistoryScreen({ onBack }) {
 
   return (
     <View style={styles.flexCol}>
-      <Header title="これまでの記録" />
-      <Text style={styles.taskHint}>直近30日に取り組んだ場所と回数です。写真は含まれません。</Text>
+      <Header title="これまでの記録" onSettingsPress={onSettingsPress} onHelpPress={onHelpPress} />
+      <Text style={styles.taskHint}>
+        直近30日に取り組んだ場所と回数です。{"\n"}写真は含まれません。
+      </Text>
       {days && days.length === 0 && (
         <Text style={styles.historyEmpty}>
-          まだ記録がありません。片付けをすると、ここに残っていきます。
+          まだ記録がありません。かたづけをすると、ここに残っていきます。
         </Text>
       )}
       {days &&
@@ -464,6 +516,90 @@ function SproutBadge() {
   );
 }
 
+function HelpSection({ title, children }) {
+  return (
+    <View style={styles.helpSection}>
+      <Text style={styles.helpSectionTitle}>{title}</Text>
+      {children}
+    </View>
+  );
+}
+
+function HelpParagraph({ children }) {
+  return <Text style={styles.helpBody}>{children}</Text>;
+}
+
+function HelpStep({ number, title, body }) {
+  return (
+    <View style={styles.helpStepRow}>
+      <View style={styles.helpStepNumber}>
+        <Text style={styles.helpStepNumberText}>{number}</Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.helpStepTitle}>{title}</Text>
+        <Text style={styles.helpBody}>{body}</Text>
+      </View>
+    </View>
+  );
+}
+
+function HelpScreen({ onBack, onHistoryPress, onSettingsPress }) {
+  return (
+    <View style={styles.flexCol}>
+      <Header title="使い方" onHistoryPress={onHistoryPress} onSettingsPress={onSettingsPress} />
+
+      <HelpSection title="① このアプリの考え方">
+        <HelpParagraph>かたづけは、一気にやろうとすると疲れてしまいます。</HelpParagraph>
+        <HelpParagraph>
+          このアプリは「5分だけ」を積み重ねる場所です。完璧にかたづけることや、毎日続けることを目指さなくて大丈夫です。
+        </HelpParagraph>
+      </HelpSection>
+
+      <HelpSection title="② 基本の流れ（4ステップ）">
+        <HelpStep number="1" title="どこをかたづける？" body="かたづける場所を選びます(おすすめも出ます)" />
+        <HelpStep
+          number="2"
+          title="はじめる前に"
+          body="かたづけ前の状態を撮っておくと、あとで見比べられます(任意)"
+        />
+        <HelpStep number="3" title="5分、はじめる" body="タイマーが動いている間だけ、取り組んでみましょう" />
+        <HelpStep number="4" title="おわったら" body="変化を撮って残せます(こちらも任意)" />
+      </HelpSection>
+
+      <HelpSection title="③ 写真について">
+        <HelpParagraph>写真は、かたづけ前後の変化を見比べるためのものです。</HelpParagraph>
+        <HelpParagraph>
+          撮らなくてもかたづけは完了にできます。「タイマーをはじめる」「完了にする」は、写真なしでもそのまま押して進められます。
+        </HelpParagraph>
+        <HelpParagraph>
+          両方撮ると、「やる前」「やった後」を並べて見比べられます。5分やりきれなくても、途中でも大丈夫。やった分はちゃんと記録に残ります。
+        </HelpParagraph>
+        <HelpParagraph>「写真を記念に残す」を押すと、カメラロールに保存されます。</HelpParagraph>
+      </HelpSection>
+
+      <HelpSection title="④ 記録について">
+        <HelpParagraph>「記録」ボタンから、直近30日に取り組んだ場所と回数が見られます。</HelpParagraph>
+        <HelpParagraph>
+          これは日々の振り返り用で、写真は含まれません。完璧を目指すためではなく、「これだけやったんだ」と気づくためのものです。
+        </HelpParagraph>
+      </HelpSection>
+
+      <HelpSection title="⑤ 通知について">
+        <HelpParagraph>
+          通知は2種類あります。ひとつは1日最大1件だけの日次リマインド。「やらなきゃ」と急かすものではなく、そっとしたお知らせです。設定 &gt; 通知時刻 から、届く時間を変更できます。
+        </HelpParagraph>
+        <HelpParagraph>
+          もうひとつは、5分タイマーが終わったときの通知です。アプリを他の操作で離れていても届きます。こちらは日次リマインドとは別に、設定からオン/オフを切り替えられます。
+        </HelpParagraph>
+      </HelpSection>
+
+      <View style={{ marginTop: 8 }}>
+        <GhostButton onPress={onBack}>もどる</GhostButton>
+      </View>
+    </View>
+  );
+}
+
 /* ---------- app ---------- */
 
 export default function App() {
@@ -473,6 +609,7 @@ export default function App() {
   const [beforePhoto, setBeforePhoto] = useState(null);
   const [afterPhoto, setAfterPhoto] = useState(null);
   const [quickPhoto, setQuickPhoto] = useState(null);
+  const [mementoSaved, setMementoSaved] = useState(false);
 
   const [timeLeft, setTimeLeft] = useState(300);
   const [extraTime, setExtraTime] = useState(0);
@@ -481,7 +618,20 @@ export default function App() {
   const [praiseMsg, setPraiseMsg] = useState("");
   const [photoMsg, setPhotoMsg] = useState("");
   const [timerPaused, setTimerPaused] = useState(false);
+  const [timerEndAt, setTimerEndAt] = useState(null);
+  const [extendStartAt, setExtendStartAt] = useState(null);
+  const [tick, setTick] = useState(0);
   const mementoRef = useRef(null);
+  const mementoSavingRef = useRef(false);
+
+  const [lastPlace, setLastPlace] = useState(null);
+  const [lastPlaceLoaded, setLastPlaceLoaded] = useState(false);
+  const [recommendState, setRecommendState] = useState({ index: 0, rerollCount: 0, guidance: false });
+  const scrollViewRef = useRef(null);
+  const gridYRef = useRef(0);
+
+  const [helpBadgeSeen, setHelpBadgeSeen] = useState(true);
+  const [previousScreen, setPreviousScreen] = useState("category");
 
   const notify = useCallback(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -492,6 +642,11 @@ export default function App() {
     initAnalytics();
     recordAppOpen();
     runDailyNotificationJob();
+    loadLastPlace().then((lp) => {
+      setLastPlace(lp);
+      setLastPlaceLoaded(true);
+    });
+    loadHelpBadgeSeen().then((seen) => setHelpBadgeSeen(seen));
 
     const sub = addNotificationOpenedListener(() => {
       trackNotificationOpened();
@@ -500,42 +655,123 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // ホーム画面に遷移するたびに、おすすめ候補をセッション内で再計算する
+    if (screen !== "category" || !lastPlaceLoaded) return;
+    setRecommendState({
+      index: computeInitialRecommendation(lastPlace?.placeId ?? null),
+      rerollCount: 0,
+      guidance: false,
+    });
+  }, [screen, lastPlaceLoaded, lastPlace]);
+
+  const rerollRecommendation = () => {
+    // 関数型更新を使い、素早い連続タップでも常に最新の状態から次の候補を計算する
+    setRecommendState((prev) => {
+      if (prev.guidance || prev.rerollCount >= 3) {
+        return { ...prev, guidance: true };
+      }
+      const next = nextRecommendationIndex(prev.index, lastPlace?.placeId ?? null);
+      if (next === null) {
+        return { ...prev, guidance: true };
+      }
+      return { index: next, rerollCount: prev.rerollCount + 1, guidance: false };
+    });
+  };
+
+  const scrollToPlaceGrid = () => {
+    scrollViewRef.current?.scrollTo({ y: gridYRef.current, animated: true });
+  };
+
+  const recommendedCategory = lastPlaceLoaded
+    ? CATEGORIES.find((c) => c.id === RECOMMEND_ORDER[recommendState.index]) || null
+    : null;
+
+  // タイマーが「動き始める」瞬間（開始・一時停止解除）に終了予定時刻を記録し、
+  // アプリがバックグラウンドでも届くよう、その時点の残り時間でOS通知を予約し直す。
+  // timeLeft をあえて依存配列から外し、開始/再開のときの値だけをスナップショットとして使う。
+  useEffect(() => {
     if (screen !== "timer" || phase !== "running" || timerPaused) return;
-    if (timeLeft <= 0) {
+    setTimerEndAt(Date.now() + timeLeft * 1000);
+    scheduleTimerCompletionNotification(timeLeft);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen, phase, timerPaused]);
+
+  useEffect(() => {
+    if (screen !== "timer" || phase !== "extending") return;
+    setExtendStartAt(Date.now());
+  }, [screen, phase]);
+
+  // 実時刻（終了予定時刻との差）から残り時間を計算し直す。バックグラウンドで
+  // setTimeout が止まっていても、アプリに戻った瞬間に正しい残り時間へ補正される。
+  useEffect(() => {
+    if (screen !== "timer" || phase !== "running" || timerPaused || timerEndAt == null) return;
+    const remaining = Math.max(0, Math.ceil((timerEndAt - Date.now()) / 1000));
+    setTimeLeft(remaining);
+    if (remaining <= 0) {
       setPhase("ended");
       notify();
       return;
     }
-    const id = setTimeout(() => setTimeLeft((t) => t - 1), 1000);
+    const id = setTimeout(() => setTick((t) => t + 1), 1000);
     return () => clearTimeout(id);
-  }, [screen, phase, timeLeft, timerPaused, notify]);
+  }, [screen, phase, timerPaused, timerEndAt, tick, notify]);
 
   useEffect(() => {
-    if (screen !== "timer" || phase !== "extending") return;
-    const id = setTimeout(() => setExtraTime((t) => t + 1), 1000);
+    if (screen !== "timer" || phase !== "extending" || extendStartAt == null) return;
+    setExtraTime(Math.max(0, Math.floor((Date.now() - extendStartAt) / 1000)));
+    const id = setTimeout(() => setTick((t) => t + 1), 1000);
     return () => clearTimeout(id);
-  }, [screen, phase, extraTime]);
+  }, [screen, phase, extendStartAt, tick]);
+
+  // アプリがバックグラウンドから復帰した瞬間に、経過時間の再計算を即座に走らせる
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") setTick((t) => t + 1);
+    });
+    return () => sub.remove();
+  }, []);
 
   const resetAll = () => {
+    cancelTimerCompletionNotification();
     setScreen("category");
     setCategory(null);
     setTask(null);
     setBeforePhoto(null);
     setAfterPhoto(null);
     setQuickPhoto(null);
+    setMementoSaved(false);
     setTimeLeft(300);
     setExtraTime(0);
     setPhase("running");
     setFinishKind("complete");
     setTimerPaused(false);
+    setTimerEndAt(null);
+    setExtendStartAt(null);
   };
 
   const cancelTimer = () => {
+    cancelTimerCompletionNotification();
     setTimeLeft(300);
     setExtraTime(0);
     setPhase("running");
     setTimerPaused(false);
+    setTimerEndAt(null);
+    setExtendStartAt(null);
     setScreen("before-photo");
+  };
+
+  const finishEarly = () => {
+    cancelTimerCompletionNotification();
+    setFinishKind("early");
+    setScreen("after-photo");
+  };
+
+  const toggleTimerPause = () => {
+    setTimerPaused((p) => {
+      const next = !p;
+      if (next) cancelTimerCompletionNotification(); // 一時停止する瞬間は予約通知を取り消す（再開時に再スケジュールされる）
+      return next;
+    });
   };
 
   const chooseCategory = async (c) => {
@@ -545,6 +781,23 @@ export default function App() {
     const t = await pickTaskForCategory(c.id, undefined, robotVacuumStatus);
     setTask(t);
     setScreen("task");
+  };
+
+  const startTask = async () => {
+    if (category) {
+      await saveLastPlace(category.id);
+      setLastPlace({ placeId: category.id, selectedAt: new Date().toISOString() });
+    }
+    setScreen("before-photo");
+  };
+
+  const openHelp = (from) => {
+    setPreviousScreen(from);
+    setScreen("help");
+    if (from === "category" && !helpBadgeSeen) {
+      setHelpBadgeSeen(true);
+      markHelpBadgeSeen();
+    }
   };
 
   const rerollTask = async () => {
@@ -575,6 +828,8 @@ export default function App() {
   };
 
   const saveMemento = async () => {
+    if (mementoSaved || mementoSavingRef.current) return; // 連打・多重保存を防ぐ
+    mementoSavingRef.current = true;
     try {
       const uri =
         beforePhoto && afterPhoto
@@ -582,12 +837,15 @@ export default function App() {
           : beforePhoto || afterPhoto;
       if (!uri) return;
       const ok = await saveImageToLibrary(uri);
+      if (ok) setMementoSaved(true);
       Alert.alert(
         ok ? "保存しました" : "保存できません",
         ok ? "写真アプリに保存しました。" : "設定アプリから写真へのアクセスを許可してください。"
       );
     } catch {
       Alert.alert("保存できませんでした", "もう一度お試しください。");
+    } finally {
+      mementoSavingRef.current = false;
     }
   };
 
@@ -597,6 +855,7 @@ export default function App() {
     <SafeAreaView style={styles.outer}>
       <StatusBar style="dark" />
       <ScrollView
+        ref={scrollViewRef}
         contentContainerStyle={styles.screen}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -607,13 +866,24 @@ export default function App() {
             onSelect={chooseCategory}
             onSettingsPress={() => setScreen("settings")}
             onHistoryPress={() => setScreen("history")}
+            onHelpPress={() => openHelp("category")}
+            showHelpBadge={!helpBadgeSeen}
+            recommendedCategory={recommendedCategory}
+            onRerollRecommendation={rerollRecommendation}
+            recommendGuidance={recommendState.guidance}
+            onGuidancePress={scrollToPlaceGrid}
+            onGridLayout={(y) => (gridYRef.current = y)}
           />
         )}
 
         {/* ---------------- HISTORY ---------------- */}
         {screen === "history" && (
           <SwipeBack onSwipeBack={() => setScreen("category")}>
-            <HistoryScreen onBack={() => setScreen("category")} />
+            <HistoryScreen
+              onBack={() => setScreen("category")}
+              onSettingsPress={() => setScreen("settings")}
+              onHelpPress={() => openHelp("history")}
+            />
           </SwipeBack>
         )}
 
@@ -621,19 +891,22 @@ export default function App() {
         {screen === "task" && category && task && (
           <SwipeBack onSwipeBack={() => setScreen("category")}>
             <View style={styles.flexCol}>
-              <Header title="今日のかたづけ" />
+              <Header
+                title="今日のかたづけ"
+                onHistoryPress={() => setScreen("history")}
+                onSettingsPress={() => setScreen("settings")}
+                onHelpPress={() => openHelp("task")}
+              />
               <View style={styles.taskCard}>
                 <CategoryChip id={category.id} label={category.label} />
                 <Text style={styles.taskTitle}>{task.title}</Text>
                 <Text style={styles.taskNote}>{task.note}</Text>
               </View>
-              <View style={{ height: 20 }} />
-              <Text style={styles.taskHint}>
-                下のボタンを押すと、5分間のタイマーが始まります。
-              </Text>
+              <TouchableOpacity onPress={rerollTask} activeOpacity={0.7} style={styles.taskRerollChip}>
+                <Text style={styles.taskRerollChipText}>↺ ほかのかたづけをする</Text>
+              </TouchableOpacity>
               <View style={{ gap: 10 }}>
-                <PrimaryButton onPress={() => setScreen("before-photo")}>5分、はじめる</PrimaryButton>
-                <GhostButton onPress={rerollTask}>ほかのかたづけをする</GhostButton>
+                <PrimaryButton onPress={startTask}>5分、はじめる</PrimaryButton>
                 <GhostButton onPress={() => setScreen("category")}>ほかの場所をかたづける</GhostButton>
                 <GhostButton onPress={() => setScreen("quick-photo")}>
                   今日はここまで（写真だけで完了）
@@ -647,7 +920,12 @@ export default function App() {
         {screen === "settings" && (
           <SwipeBack onSwipeBack={() => setScreen("category")}>
             <View style={styles.flexCol}>
-              <Header title="設定" />
+              <Header title="設定" onHistoryPress={() => setScreen("history")} onHelpPress={() => openHelp("settings")} />
+              <TouchableOpacity style={styles.settingsRow} onPress={() => openHelp("settings")} activeOpacity={0.7}>
+                <Text style={styles.settingsRowLabel}>アプリの使い方</Text>
+                <Text style={styles.settingsRowChevron}>›</Text>
+              </TouchableOpacity>
+              <View style={styles.settingsRowDivider} />
               <NotificationSettingsScreen />
               <RobotVacuumSettingsScreen />
               <HiddenTasksSettingsScreen />
@@ -658,13 +936,29 @@ export default function App() {
           </SwipeBack>
         )}
 
+        {/* ---------------- HELP ---------------- */}
+        {screen === "help" && (
+          <SwipeBack onSwipeBack={() => setScreen(previousScreen)}>
+            <HelpScreen
+              onBack={() => setScreen(previousScreen)}
+              onHistoryPress={() => setScreen("history")}
+              onSettingsPress={() => setScreen("settings")}
+            />
+          </SwipeBack>
+        )}
+
         {/* ---------------- BEFORE PHOTO ---------------- */}
         {screen === "before-photo" && (
           <SwipeBack onSwipeBack={() => setScreen("task")}>
             <View style={styles.flexCol}>
-              <Header title="はじめる前に" />
+              <Header
+                title="はじめる前に"
+                onHistoryPress={() => setScreen("history")}
+                onSettingsPress={() => setScreen("settings")}
+                onHelpPress={() => openHelp("before-photo")}
+              />
               <PhotoStep
-                subheading="片付け前の状態を撮っておくと、あとで見比べられます。義務ではありません。"
+                subheading="かたづけ前の状態を撮っておくと、あとで見比べられます。義務ではありません。"
                 photo={beforePhoto}
                 setPhoto={setBeforePhoto}
                 onNext={() => setScreen("timer")}
@@ -689,15 +983,8 @@ export default function App() {
                 />
                 <View style={{ flex: 1, minHeight: 20 }} />
                 <View style={{ width: "100%", gap: 10 }}>
-                  <GhostButton
-                    onPress={() => {
-                      setFinishKind("early");
-                      setScreen("after-photo");
-                    }}
-                  >
-                    完了した
-                  </GhostButton>
-                  <GhostButton onPress={() => setTimerPaused((p) => !p)}>
+                  <GhostButton onPress={finishEarly}>完了した</GhostButton>
+                  <GhostButton onPress={toggleTimerPause}>
                     {timerPaused ? "タイマーを再開する" : "タイマーを一時停止する"}
                   </GhostButton>
                   <GhostButton onPress={cancelTimer}>やっぱやめる</GhostButton>
@@ -750,7 +1037,12 @@ export default function App() {
         {/* ---------------- AFTER PHOTO ---------------- */}
         {screen === "after-photo" && (
           <View style={styles.flexCol}>
-            <Header title="おわったら" />
+            <Header
+              title="おわったら"
+              onHistoryPress={() => setScreen("history")}
+              onSettingsPress={() => setScreen("settings")}
+              onHelpPress={() => openHelp("after-photo")}
+            />
             <PhotoStep
               subheading="変化が残せます。こちらも任意です。"
               photo={afterPhoto}
@@ -779,7 +1071,7 @@ export default function App() {
                       <Text style={styles.emptyThumb}>—</Text>
                     )}
                   </View>
-                  <Text style={styles.compareLabel}>撮る前</Text>
+                  <Text style={styles.compareLabel}>やる前</Text>
                 </View>
                 <View style={styles.compareCol}>
                   <View style={styles.compareThumb}>
@@ -789,7 +1081,7 @@ export default function App() {
                       <Text style={styles.emptyThumb}>—</Text>
                     )}
                   </View>
-                  <Text style={styles.compareLabel}>撮った後</Text>
+                  <Text style={styles.compareLabel}>やった後</Text>
                 </View>
               </View>
             )}
@@ -804,7 +1096,9 @@ export default function App() {
             <View style={{ flex: 1, minHeight: 20 }} />
             <View style={{ width: "100%", gap: 10 }}>
               {(beforePhoto || afterPhoto) && (
-                <GhostButton onPress={saveMemento}>写真を記念に残す</GhostButton>
+                <GhostButton onPress={saveMemento} disabled={mementoSaved}>
+                  {mementoSaved ? "保存しました ✓" : "写真を記念に残す"}
+                </GhostButton>
               )}
               <GhostButton onPress={resetAll}>ホームへ戻る</GhostButton>
             </View>
@@ -815,7 +1109,12 @@ export default function App() {
         {screen === "quick-photo" && (
           <SwipeBack onSwipeBack={() => setScreen("task")}>
             <View style={styles.flexCol}>
-              <Header title="今日はここまで" />
+              <Header
+                title="今日はここまで"
+                onHistoryPress={() => setScreen("history")}
+                onSettingsPress={() => setScreen("settings")}
+                onHelpPress={() => openHelp("quick-photo")}
+              />
               <PhotoStep
                 subheading="写真を1枚撮るだけでも、記録になります。かたづけしなくても大丈夫です。"
                 photo={quickPhoto}
@@ -868,7 +1167,19 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   settingsIcon: { fontSize: 16 },
-  headerActions: { flexDirection: "row", gap: 16 },
+  helpIcon: { fontSize: 16, fontWeight: "800", color: C.ink },
+  helpBadgeDot: {
+    position: "absolute",
+    top: -2,
+    right: -2,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: C.coral,
+    borderWidth: 1.5,
+    borderColor: C.bg,
+  },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 12 },
   historyBtn: {
     height: 34,
     borderRadius: 17,
@@ -876,7 +1187,7 @@ const styles = StyleSheet.create({
     borderColor: C.ghostBorder,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
   },
   historyBtnText: { fontSize: 13, fontWeight: "800", color: C.ink },
 
@@ -885,10 +1196,35 @@ const styles = StyleSheet.create({
   historyDate: { fontSize: 14, fontWeight: "800", color: C.ink, marginBottom: 10 },
   historyChipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
 
+  settingsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 14,
+  },
+  settingsRowLabel: { fontSize: 16, color: C.ink },
+  settingsRowChevron: { fontSize: 20, color: C.ink, opacity: 0.4 },
+  settingsRowDivider: { height: 1, backgroundColor: C.ghostBorder, marginBottom: 4 },
+
+  helpSection: { marginBottom: 26 },
+  helpSectionTitle: { fontSize: 17, fontWeight: "800", color: C.ink, marginBottom: 10 },
+  helpBody: { fontSize: 14, color: C.ink, opacity: 0.65, lineHeight: 21, marginBottom: 8 },
+  helpStepRow: { flexDirection: "row", gap: 12, marginBottom: 16, alignItems: "flex-start" },
+  helpStepNumber: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: C.well,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+  helpStepNumberText: { fontSize: 12, fontWeight: "800", color: C.sageDark },
+  helpStepTitle: { fontSize: 15, fontWeight: "800", color: C.ink, marginBottom: 4 },
+
   mementoComposite: { position: "absolute", top: -9999, left: 0, width: 600, height: 400, flexDirection: "row" },
   mementoHalf: { width: 300, height: 400 },
 
-  illustrationWrap: { alignItems: "center", marginBottom: 10 },
   categoryIntro: {
     fontSize: 16,
     fontWeight: "700",
@@ -897,6 +1233,45 @@ const styles = StyleSheet.create({
     lineHeight: 23,
     marginBottom: 6,
     textAlign: "center",
+  },
+
+  recommendCard: {
+    backgroundColor: C.card,
+    borderRadius: 24,
+    padding: 20,
+    marginTop: 16,
+    marginBottom: 24,
+  },
+  recommendLabel: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: C.sageDark,
+    letterSpacing: 0.5,
+    marginBottom: 12,
+  },
+  recommendPlaceRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 10 },
+  recommendIconBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  recommendPlaceName: { fontSize: 21, fontWeight: "800", color: C.ink },
+  recommendGuidanceText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: C.sageDark,
+    textAlign: "center",
+    marginTop: 16,
+  },
+
+  gridHeading: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: C.ink,
+    opacity: 0.85,
+    marginBottom: 10,
   },
   categoryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   categoryCard: {
@@ -930,7 +1305,18 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  taskCard: { backgroundColor: C.card, borderRadius: 24, padding: 20, marginBottom: 20 },
+  taskCard: { backgroundColor: C.card, borderRadius: 24, padding: 20, marginBottom: 14 },
+  taskRerollChip: {
+    alignSelf: "center",
+    backgroundColor: C.well,
+    borderWidth: 1.5,
+    borderColor: C.wellBorder,
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    marginBottom: 20,
+  },
+  taskRerollChipText: { fontSize: 15, fontWeight: "700", color: C.ink },
   categoryChip: {
     flexDirection: "row",
     alignItems: "center",
@@ -973,6 +1359,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   ghostBtnText: { color: C.ink, fontSize: 15, fontWeight: "700" },
+  ghostBtnDisabled: { opacity: 0.5 },
+  ghostBtnTextDisabled: { opacity: 0.8 },
 
   subheading: { fontSize: 14, color: C.ink, opacity: 0.7, lineHeight: 20, marginBottom: 18 },
   cameraWell: {
@@ -986,7 +1374,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 12,
   },
-  cameraDot: { width: 60, height: 60, borderRadius: 30, backgroundColor: C.sage, alignItems: "center", justifyContent: "center" },
+  cameraDot: { width: 76, height: 76, borderRadius: 38, backgroundColor: C.sage, alignItems: "center", justifyContent: "center" },
   cameraWellText: { fontSize: 14, fontWeight: "700", color: C.ink, opacity: 0.75 },
 
   photoPreviewWrap: { height: 190, borderRadius: 24, overflow: "hidden" },

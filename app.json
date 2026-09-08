@@ -47,6 +47,15 @@
           "resizeMode": "contain",
           "backgroundColor": "#8FA888"
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36
+          }
+        }
       ]
     ],
     "extra": {

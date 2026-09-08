@@ -40,6 +40,47 @@ function timeout(ms: number): Promise<never> {
   );
 }
 
+/**
+ * OS通知権限を確認し、未許可なら許可を取りに行く共通処理。
+ * 日次リマインド・タイマー終了通知、どちらのトグルをONにする場合も同じ確認が必要なため共通化している。
+ * 権限が得られなかった場合は onDenied を呼んで呼び出し側にアラート表示を委ねる。
+ */
+async function ensureNotificationPermission(onDenied: () => void): Promise<boolean> {
+  try {
+    const currentStatus = await Promise.race([
+      getOsNotificationPermissionStatus(),
+      timeout(4000),
+    ]);
+
+    if (currentStatus === 'denied') {
+      // Androidは一度拒否されると再リクエストしてもダイアログを出さないため、
+      // ここで無駄なリクエストをせず、直接設定アプリへ誘導する
+      onDenied();
+      return false;
+    }
+
+    let granted = currentStatus === 'granted';
+    if (!granted) {
+      granted = await Promise.race([requestOsNotificationPermission(), timeout(4000)]);
+    }
+
+    if (!granted) {
+      onDenied();
+      return false;
+    }
+    return true;
+  } catch (error) {
+    const isTimeout = error instanceof Error && error.message === 'timeout';
+    Alert.alert(
+      '通知を有効にできませんでした',
+      isTimeout
+        ? '通知の確認に時間がかかっています。少し時間をおいて、もう一度お試しください。'
+        : 'もう一度お試しいただくか、端末の設定から通知の許可状況をご確認ください。'
+    );
+    return false;
+  }
+}
+
 export function NotificationSettingsScreen() {
   const [settings, setSettings] = useState<NotificationSettings | null>(null);
   const [showPicker, setShowPicker] = useState(false);
@@ -47,6 +88,7 @@ export function NotificationSettingsScreen() {
   // state の更新は非同期で反映が遅れるため、Android の Switch コンポーネントが
   // 値のズレを検知して onValueChange を連続発火させるケースを止めきれないことがある。
   const busyRef = useRef(false);
+  const timerBusyRef = useRef(false);
 
   useEffect(() => {
     loadNotificationSettings().then(setSettings);
@@ -94,6 +136,27 @@ export function NotificationSettingsScreen() {
     }
   };
 
+  // ポップアップを閉じた瞬間にロック解除する（表示直後に解除すると、
+  // Android の Switch が値のズレで onValueChange を再発火させたときに
+  // ロックが素通りしてポップアップが連続表示される不具合を防ぐため）
+  const showPermissionAlert = (busy: React.MutableRefObject<boolean>) => {
+    Alert.alert(
+      '通知が許可されていません',
+      '端末の設定から、スキかたの通知を許可してください。',
+      [
+        { text: '閉じる', style: 'cancel', onPress: () => { busy.current = false; } },
+        {
+          text: '設定を開く',
+          onPress: () => {
+            busy.current = false;
+            Linking.openSettings();
+          },
+        },
+      ],
+      { onDismiss: () => { busy.current = false; } }
+    );
+  };
+
   const handleToggle = async (value: boolean) => {
     if (!value) {
       // オフにする場合は許可周りのチェック不要
@@ -104,72 +167,27 @@ export function NotificationSettingsScreen() {
     if (busyRef.current) return; // 二重タップ・多重発火防止
     busyRef.current = true;
 
-    // ポップアップを閉じた瞬間にロック解除する（表示直後に解除すると、
-    // Android の Switch が値のズレで onValueChange を再発火させたときに
-    // ロックが素通りしてポップアップが連続表示される不具合を防ぐため）
-    const showPermissionAlert = () => {
-      Alert.alert(
-        '通知が許可されていません',
-        '端末の設定から、スキかたの通知を許可してください。',
-        [
-          {
-            text: '閉じる',
-            style: 'cancel',
-            onPress: () => {
-              busyRef.current = false;
-            },
-          },
-          {
-            text: '設定を開く',
-            onPress: () => {
-              busyRef.current = false;
-              Linking.openSettings();
-            },
-          },
-        ],
-        { onDismiss: () => { busyRef.current = false; } }
-      );
-    };
+    const granted = await ensureNotificationPermission(() => showPermissionAlert(busyRef));
+    if (!granted) return;
 
-    try {
-      const currentStatus = await Promise.race([
-        getOsNotificationPermissionStatus(),
-        timeout(4000),
-      ]);
+    await updateSettings({ ...settings, notificationsEnabled: value });
+    busyRef.current = false;
+  };
 
-      if (currentStatus === 'denied') {
-        // Androidは一度拒否されると再リクエストしてもダイアログを出さないため、
-        // ここで無駄なリクエストをせず、直接設定アプリへ誘導する
-        showPermissionAlert();
-        return;
-      }
-
-      let granted = currentStatus === 'granted';
-      if (!granted) {
-        granted = await Promise.race([
-          requestOsNotificationPermission(),
-          timeout(4000),
-        ]);
-      }
-
-      if (!granted) {
-        showPermissionAlert();
-        return;
-      }
-
-      await updateSettings({ ...settings, notificationsEnabled: value });
-      busyRef.current = false;
-    } catch (error) {
-      // 権限確認・通知予約のどこかで失敗・ハングしても、無反応のまま終わらせず必ず伝える
-      const isTimeout = error instanceof Error && error.message === 'timeout';
-      Alert.alert(
-        '通知を有効にできませんでした',
-        isTimeout
-          ? 'この端末では通知の許可確認がうまく動作しませんでした。開発ビルドへの切り替えが必要な可能性があります。'
-          : 'もう一度お試しいただくか、端末の設定から通知の許可状況をご確認ください。'
-      );
-      busyRef.current = false;
+  const handleTimerToggle = async (value: boolean) => {
+    if (!value) {
+      updateSettings({ ...settings, timerCompletionEnabled: value });
+      return;
     }
+
+    if (timerBusyRef.current) return;
+    timerBusyRef.current = true;
+
+    const granted = await ensureNotificationPermission(() => showPermissionAlert(timerBusyRef));
+    if (!granted) return;
+
+    await updateSettings({ ...settings, timerCompletionEnabled: value });
+    timerBusyRef.current = false;
   };
 
   const handleTimeChange = (event: unknown, selectedDate?: Date) => {
@@ -230,6 +248,21 @@ export function NotificationSettingsScreen() {
       <Text style={styles.footnote}>
         通知は1日最大1件です。やらなくて大丈夫な、そっとしたお知らせだけをお届けします。
       </Text>
+
+      <Text style={[styles.sectionLabel, styles.timerSectionLabel]}>タイマー終了通知</Text>
+
+      <View style={styles.row}>
+        <Text style={styles.rowLabel}>タイマー終了を通知する</Text>
+        <Switch
+          value={settings.timerCompletionEnabled}
+          onValueChange={handleTimerToggle}
+          trackColor={{ true: COLORS.accent, false: '#ccc' }}
+        />
+      </View>
+
+      <Text style={styles.footnote}>
+        5分タイマーが終わるたびに届きます。日次リマインドとは別の通知で、1日1件ルールの対象外です。
+      </Text>
     </View>
   );
 }
@@ -243,6 +276,9 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     opacity: 0.6,
     marginBottom: 8,
+  },
+  timerSectionLabel: {
+    marginTop: 24,
   },
   row: {
     flexDirection: 'row',
