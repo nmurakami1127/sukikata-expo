@@ -283,6 +283,92 @@ export function updateRobotVacuumStatus(
   };
 }
 
+// ---- ホーム画面バナー（補助案内）の表示条件・再表示ロジック（実装指示書2-2） ----
+
+/**
+ * 「床」カテゴリの利用回数がこの回数に達したら初回案内バナーを表示候補にする（暫定値）。
+ * 実装指示書7章の要確認事項に明記されている通り確定値ではないため、PM確認前提で定数化する。
+ */
+export const FLOOR_PROMPT_THRESHOLD = 3;
+
+/**
+ * 「今は設定しない」を選んだ後、バナーを再表示しない期間（日数）。要求定義4-2に明記された値。
+ */
+const ROBOT_PROMPT_DISMISS_DAYS = 30;
+
+function daysSinceIso(isoDateString: string, now: Date): number {
+  const then = new Date(isoDateString).getTime();
+  return Math.floor((now.getTime() - then) / 86400000);
+}
+
+/**
+ * 「床」カテゴリを選んだときに呼ぶ。floorCategoryUseCountSinceLastPromptを
+ * 状況に応じて更新する（型定義のコメントに記載の通り、この1つのカウンタを2つの用途で使い回す）。
+ *
+ * - robotVacuumStatusがunset以外（owner/considering確定後）：バナー自体を出さないため更新しない
+ * - 用途A（robotPromptDismissedAtがnull、初回案内前）：選ぶたびに+1
+ * - 用途B（「今は設定しない」後）：ROBOT_PROMPT_DISMISS_DAYS+1日目（=31日目）以降の利用のみ+1する
+ *   （30日経過前のカウントアップは再表示判定に影響しないため行わない）
+ */
+export function recordFloorCategoryUse(
+  prefs: RobotVacuumPreferences,
+  now: Date = new Date()
+): RobotVacuumPreferences {
+  if (prefs.robotVacuumStatus !== 'unset') return prefs;
+
+  if (prefs.robotPromptDismissedAt !== null) {
+    const days = daysSinceIso(prefs.robotPromptDismissedAt, now);
+    if (days <= ROBOT_PROMPT_DISMISS_DAYS) return prefs;
+  }
+
+  return {
+    ...prefs,
+    floorCategoryUseCountSinceLastPrompt: prefs.floorCategoryUseCountSinceLastPrompt + 1,
+  };
+}
+
+/**
+ * ホーム画面バナーで「今は設定しない」を選んだときに呼ぶ。
+ * robotPromptDismissedAtを現在日時に更新し、floorCategoryUseCountSinceLastPromptを0にリセットする
+ * （用途Aから用途Bへの切り替え、または用途Bの再開始）。robotVacuumStatus/hiddenTaskIdsには触れない。
+ */
+export function dismissRobotPrompt(
+  prefs: RobotVacuumPreferences,
+  now: Date = new Date()
+): RobotVacuumPreferences {
+  return {
+    ...prefs,
+    robotPromptDismissedAt: now.toISOString(),
+    floorCategoryUseCountSinceLastPrompt: 0,
+  };
+}
+
+/**
+ * ホーム画面バナーを表示すべきかどうかを判定する（実装指示書2-2）。
+ * dismissedThisSessionは「バナーを単に閉じた」場合の同一セッション内抑制で、
+ * 永続化しないセッション限りの状態としてApp.js側（UI層）が保持する想定。
+ *
+ * 表示禁止タイミング（タスク表示直前/実行中/タイマー終了時/完了直後/褒めメッセージ表示中）は
+ * この関数の責務ではない。呼び出し側（ホーム画面レンダリング時のみ呼ぶ）で担保すること。
+ */
+export function shouldShowRobotPrompt(
+  prefs: RobotVacuumPreferences,
+  dismissedThisSession: boolean,
+  now: Date = new Date()
+): boolean {
+  if (dismissedThisSession) return false;
+  if (prefs.robotVacuumStatus !== 'unset') return false;
+
+  if (prefs.robotPromptDismissedAt === null) {
+    return prefs.floorCategoryUseCountSinceLastPrompt >= FLOOR_PROMPT_THRESHOLD;
+  }
+
+  const days = daysSinceIso(prefs.robotPromptDismissedAt, now);
+  if (days <= ROBOT_PROMPT_DISMISS_DAYS) return false;
+
+  return prefs.floorCategoryUseCountSinceLastPrompt >= 1;
+}
+
 /**
  * 「このタスクは今後出さない」を選択したときに呼ぶ。指定タスクIDをhiddenTaskIdsに追加する
  * （重複追加はしない）。それ以外のフィールドには触れない。
