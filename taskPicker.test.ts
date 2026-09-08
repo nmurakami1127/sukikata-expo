@@ -7,9 +7,15 @@ import {
   pickTaskForCategory,
   selectWeightedTask,
   NoEligibleTaskError,
+  hideTaskAndPickReplacement,
 } from './taskPicker';
 import { TASKS, Task } from './taskData';
-import { todayString, loadTaskStats, saveTaskStats } from './storage';
+import {
+  todayString,
+  loadTaskStats,
+  saveTaskStats,
+  loadRobotVacuumPreferences,
+} from './storage';
 import { TaskStats } from './types';
 
 // taskPicker.ts内部の履歴保存キー（非公開）。テストでの直接検証のためここに複製する。
@@ -334,5 +340,57 @@ describe('pickTaskForCategory（クールダウン枯渇時のフォールバッ
 
     const stats = await loadTaskStats();
     expect(stats[target.id]?.skippedCount).toBe(1);
+  });
+});
+
+// ステップ5残タスク：「今後出さない」ボタン（タスク画面・長押しメニュー）が呼ぶ
+// hideTaskAndPickReplacement のテスト（実装指示書2-6）。
+describe('hideTaskAndPickReplacement（「今後出さない」選択後の一連の処理）', () => {
+  beforeEach(async () => {
+    await AsyncStorage.clear();
+    jest.restoreAllMocks();
+  });
+
+  it('非表示にしたタスクは代替タスクとして返らず、以後の選択からも除外される', async () => {
+    const target = TASKS.desk[0];
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+
+    const replacement = await hideTaskAndPickReplacement('desk', target.id);
+
+    expect(replacement.id).not.toBe(target.id);
+    // 除外後の先頭（desk_002）が選ばれているはず
+    expect(replacement.id).toBe(TASKS.desk[1].id);
+
+    // 非表示設定後、あらためて通常選択してもtargetは戻ってこない
+    const prefs = await loadRobotVacuumPreferences();
+    const again = await pickTaskForCategory('desk', undefined, 'unset', prefs.hiddenTaskIds);
+    expect(again.id).not.toBe(target.id);
+  });
+
+  it('非表示設定はAsyncStorageに永続化される（hiddenTaskIdsに追加される）', async () => {
+    const target = TASKS.desk[0];
+
+    await hideTaskAndPickReplacement('desk', target.id);
+
+    const prefs = await loadRobotVacuumPreferences();
+    expect(prefs.hiddenTaskIds).toContain(target.id);
+  });
+
+  it('カテゴリ内の残り全タスクも非表示にすると、最後の1件を隠した呼び出しでNoEligibleTaskErrorが投げられる', async () => {
+    const ids = TASKS.desk.map((t) => t.id);
+
+    // 最初の4件は毎回代替タスクが存在するので正常に完了する
+    for (let i = 0; i < ids.length - 1; i++) {
+      await hideTaskAndPickReplacement('desk', ids[i]);
+    }
+
+    // 5件目（最後の1件）を隠すと、代替タスクが無いためエラーになる
+    await expect(hideTaskAndPickReplacement('desk', ids[ids.length - 1])).rejects.toThrow(
+      NoEligibleTaskError
+    );
+
+    // エラーになっても「非表示にする」設定自体は保存されている（自動解除しない）
+    const prefs = await loadRobotVacuumPreferences();
+    expect(prefs.hiddenTaskIds.sort()).toEqual([...ids].sort());
   });
 });

@@ -2,7 +2,14 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TASKS, Task } from './taskData';
-import { todayString, loadTaskStats, saveTaskStats } from './storage';
+import {
+  todayString,
+  loadTaskStats,
+  saveTaskStats,
+  loadRobotVacuumPreferences,
+  saveRobotVacuumPreferences,
+  hideTask,
+} from './storage';
 import { RobotVacuumStatus, TaskStats } from './types';
 
 /**
@@ -226,4 +233,27 @@ export async function pickTaskForCategory(
   await saveTaskHistory({ ...history, [chosen.id]: today });
   await recordSelectionStats(chosen.id, excludeTaskId);
   return chosen;
+}
+
+/**
+ * 「このタスクは今後出さない」選択時の一連の処理（実装指示書2-6）。
+ * taskIdToHideをhiddenTaskIdsに追加して永続化したうえで、同じカテゴリから代わりの
+ * タスクを1件取得する。保存は代替タスクの取得より先に行うため、カテゴリ内の候補が
+ * 尽きて NoEligibleTaskError が投げられた場合でも「非表示にする」設定自体は残る
+ * （自動解除しない）。
+ */
+export async function hideTaskAndPickReplacement(
+  categoryId: string,
+  taskIdToHide: string
+): Promise<Task> {
+  const prefs = await loadRobotVacuumPreferences();
+  const nextPrefs = hideTask(prefs, taskIdToHide);
+  await saveRobotVacuumPreferences(nextPrefs);
+
+  return pickTaskForCategory(
+    categoryId,
+    taskIdToHide,
+    nextPrefs.robotVacuumStatus,
+    nextPrefs.hiddenTaskIds
+  );
 }

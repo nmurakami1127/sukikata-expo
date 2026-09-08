@@ -34,7 +34,11 @@ import {
 } from "./storage";
 import { runDailyNotificationJob } from "./dailyJob";
 import { CATEGORIES, CATEGORY_STYLE } from "./taskData";
-import { pickTaskForCategory } from "./taskPicker";
+import {
+  pickTaskForCategory,
+  hideTaskAndPickReplacement,
+  NoEligibleTaskError,
+} from "./taskPicker";
 import {
   RECOMMEND_ORDER,
   loadLastPlace,
@@ -777,10 +781,19 @@ export default function App() {
   const chooseCategory = async (c) => {
     setCategory(c);
     // 選択のたびに最新の設定を読み直す（設定画面はApp.jsの状態を経由せず自分でstorageに保存するため）
-    const { robotVacuumStatus } = await loadRobotVacuumPreferences();
-    const t = await pickTaskForCategory(c.id, undefined, robotVacuumStatus);
-    setTask(t);
-    setScreen("task");
+    const { robotVacuumStatus, hiddenTaskIds } = await loadRobotVacuumPreferences();
+    try {
+      const t = await pickTaskForCategory(c.id, undefined, robotVacuumStatus, hiddenTaskIds);
+      setTask(t);
+      setScreen("task");
+    } catch (e) {
+      if (e instanceof NoEligibleTaskError) {
+        // 暫定対応：候補が非表示設定で尽きた場合の案内UIは次の対応で追加する。
+        // それまではカテゴリ選択画面に留まる（screenは既に"category"のまま）。
+        return;
+      }
+      throw e;
+    }
   };
 
   const startTask = async () => {
@@ -804,9 +817,47 @@ export default function App() {
     if (!category) return;
     trackTaskSkipped();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    const { robotVacuumStatus } = await loadRobotVacuumPreferences();
-    const t = await pickTaskForCategory(category.id, task?.id, robotVacuumStatus);
-    setTask(t);
+    const { robotVacuumStatus, hiddenTaskIds } = await loadRobotVacuumPreferences();
+    try {
+      const t = await pickTaskForCategory(category.id, task?.id, robotVacuumStatus, hiddenTaskIds);
+      setTask(t);
+    } catch (e) {
+      if (e instanceof NoEligibleTaskError) {
+        // 暫定対応：候補が非表示設定で尽きた場合の案内UIは次の対応で追加する。
+        setScreen("category");
+        return;
+      }
+      throw e;
+    }
+  };
+
+  // 「このタスクは今後出さない」（実装指示書2-6）。タスク画面のrerollチップを長押しすると
+  // 確認ダイアログを出す（通常利用では目立たせない補助機能として配置）。
+  const hideCurrentTask = async () => {
+    if (!category || !task) return;
+    try {
+      const t = await hideTaskAndPickReplacement(category.id, task.id);
+      setTask(t);
+    } catch (e) {
+      if (e instanceof NoEligibleTaskError) {
+        // 暫定対応：候補が非表示設定で尽きた場合の案内UIは次の対応で追加する。
+        setScreen("category");
+        return;
+      }
+      throw e;
+    }
+  };
+
+  const confirmHideCurrentTask = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    Alert.alert(
+      "このタスクは今後出さない",
+      "この操作はいつでも設定画面から取り消せます。",
+      [
+        { text: "キャンセル", style: "cancel" },
+        { text: "今後出さない", style: "destructive", onPress: hideCurrentTask },
+      ]
+    );
   };
 
   const goComplete = (kind) => {
@@ -902,7 +953,12 @@ export default function App() {
                 <Text style={styles.taskTitle}>{task.title}</Text>
                 <Text style={styles.taskNote}>{task.note}</Text>
               </View>
-              <TouchableOpacity onPress={rerollTask} activeOpacity={0.7} style={styles.taskRerollChip}>
+              <TouchableOpacity
+                onPress={rerollTask}
+                onLongPress={confirmHideCurrentTask}
+                activeOpacity={0.7}
+                style={styles.taskRerollChip}
+              >
                 <Text style={styles.taskRerollChipText}>↺ ほかのかたづけをする</Text>
               </TouchableOpacity>
               <View style={{ gap: 10 }}>
