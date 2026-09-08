@@ -3,6 +3,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TASKS, Task } from './taskData';
 import { todayString } from './storage';
+import { RobotVacuumStatus } from './types';
+
+/**
+ * owner/considering向けタスクの重みにかける倍率（暫定値）。
+ * 「除外はしないが優先度を上げる」の度合いを決める定数で、実装指示書7章の
+ * 要確認事項には明記が無いためPM確認前提の暫定値としてここに定数化する。
+ */
+export const ROBOT_AUDIENCE_WEIGHT_MULTIPLIER = 3;
 
 const HISTORY_KEY = 'sukikata:taskHistory';
 
@@ -32,15 +40,59 @@ function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+/** ユーザー属性から、優先すべきaudience値を返す。unsetの場合はnull（フィルタなし） */
+function audienceForStatus(
+  status: RobotVacuumStatus
+): 'robot_owner' | 'robot_considering' | null {
+  if (status === 'owner') return 'robot_owner';
+  if (status === 'considering') return 'robot_considering';
+  return null;
+}
+
+function effectiveWeight(task: Task, audience: 'robot_owner' | 'robot_considering'): number {
+  const base = task.weight ?? 1;
+  if (task.audiences?.includes(audience)) return base * ROBOT_AUDIENCE_WEIGHT_MULTIPLIER;
+  return base;
+}
+
 /**
- * 指定カテゴリから、直近 cooldownDays 以内に出していないタスクをランダムに1件選ぶ。
+ * プールから1件選ぶ（cooldown等の絞り込みは行わない、純粋な選択処理）。
+ *
+ * robotVacuumStatus が 'unset' の場合は既存MVPと完全に同じ一様ランダム選択を行う
+ * （audiences/weightは一切参照しない。実装指示書2-3の受け入れ条件「unsetユーザーの
+ * 出力分布は現行MVPと変わらない」に対応）。
+ *
+ * 'owner'/'considering' の場合、該当audienceを持つタスクの重みを
+ * ROBOT_AUDIENCE_WEIGHT_MULTIPLIER倍にした重み付きランダム選択を行う。
+ * 除外ではないため、非該当タスクも通常タスクとして選ばれ続ける。
+ */
+export function selectWeightedTask(pool: Task[], robotVacuumStatus: RobotVacuumStatus): Task {
+  const audience = audienceForStatus(robotVacuumStatus);
+  if (!audience) return pickRandom(pool);
+
+  const weights = pool.map((t) => effectiveWeight(t, audience));
+  const total = weights.reduce((sum, w) => sum + w, 0);
+
+  let r = Math.random() * total;
+  for (let i = 0; i < pool.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return pool[i];
+  }
+  return pool[pool.length - 1]; // 浮動小数点誤差で全減算しきれなかった場合のフォールバック
+}
+
+/**
+ * 指定カテゴリから、直近 cooldownDays 以内に出していないタスクを1件選ぶ。
  * 全タスクがクールダウン中の場合は、そのカテゴリ全体から選び直す（表示を止めないため）。
  * excludeTaskId を指定すると、そのタスク以外から選ぶ（「ほかのかたづけをする」で
  * 同じタスクが連続して出るのを防ぐため）。カテゴリに1件しかない場合は無視される。
+ * robotVacuumStatus を指定すると、該当ユーザー向けタスクの選択優先度が上がる
+ * （省略時は 'unset' 扱いで既存MVPと同じ挙動）。
  */
 export async function pickTaskForCategory(
   categoryId: string,
-  excludeTaskId?: string
+  excludeTaskId?: string,
+  robotVacuumStatus: RobotVacuumStatus = 'unset'
 ): Promise<Task> {
   const pool = TASKS[categoryId] ?? [];
   const history = await loadTaskHistory();
@@ -57,7 +109,7 @@ export async function pickTaskForCategory(
     eligible = eligible.filter((t) => t.id !== excludeTaskId);
   }
 
-  const chosen = pickRandom(eligible);
+  const chosen = selectWeightedTask(eligible, robotVacuumStatus);
 
   await saveTaskHistory({ ...history, [chosen.id]: today });
   return chosen;
