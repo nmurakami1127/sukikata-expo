@@ -63,6 +63,13 @@ import {
   trackTaskSkipped,
   trackStreakDay,
   trackNotificationOpened,
+  trackRobotStatusSet,
+  trackRobotPromptShown,
+  trackRobotPromptDismissed,
+  trackRobotTaskCompleted,
+  trackRobotTaskSkipped,
+  trackTaskHidden,
+  trackRobotShortcutOpened,
 } from "./analytics";
 import { recordActivityAndGetStreak } from "./streakTracker";
 import { recordTaskCompletion, getRecentHistoryByDay } from "./historyStore";
@@ -767,11 +774,28 @@ export default function App() {
     ? shouldShowRobotPrompt(robotVacuumPrefs, robotPromptClosedThisSession)
     : false;
 
+  // robot_prompt_shown（実装指示書4章）：showRobotPromptがfalse→trueに変わった瞬間だけ発火する。
+  // showRobotPrompt自体は毎レンダー再計算される派生値なので、依存配列の比較だけに頼らず
+  // 前回値をuseRefで明示的に保持・比較して、確実にエッジ検知する
+  // （ホーム画面に戻るたびに毎回発火する、という事故を避けるため）。
+  // 手動確認の観点：バナーを1回表示→✕で閉じる→ホーム画面から一度離れて戻る、を行っても
+  // 「今は設定しない」を選ばない限りbannerは再表示されない（30日未満は表示条件自体を満たさない）
+  // ため、この操作では通常robot_prompt_shownは1回しか発火しないはず。develop時にconsole.logを
+  // 一時的に仕込んで確認する場合は、この関係が保たれているかを見ること。
+  const robotPromptWasShownRef = useRef(false);
+  useEffect(() => {
+    if (showRobotPrompt && !robotPromptWasShownRef.current) {
+      trackRobotPromptShown();
+    }
+    robotPromptWasShownRef.current = showRobotPrompt;
+  }, [showRobotPrompt]);
+
   const selectRobotStatus = async (status) => {
     if (!robotVacuumPrefs) return;
     const next = updateRobotVacuumStatus(robotVacuumPrefs, status);
     setRobotVacuumPrefs(next);
     await saveRobotVacuumPreferences(next);
+    trackRobotStatusSet(status);
   };
 
   const dismissRobotPromptPermanently = async () => {
@@ -779,10 +803,12 @@ export default function App() {
     const next = dismissRobotPrompt(robotVacuumPrefs);
     setRobotVacuumPrefs(next);
     await saveRobotVacuumPreferences(next);
+    trackRobotPromptDismissed("dismiss_permanently");
   };
 
   const closeRobotPromptThisSession = () => {
     setRobotPromptClosedThisSession(true);
+    trackRobotPromptDismissed("close");
   };
 
   // ショートカット「ロボット掃除機前の5分」（実装指示書2-4）。considering/unsetには表示しない。
@@ -971,6 +997,9 @@ export default function App() {
   const rerollTask = async () => {
     if (!category) return;
     trackTaskSkipped();
+    if (task?.audiences?.includes("robot_owner") || task?.audiences?.includes("robot_considering")) {
+      trackRobotTaskSkipped();
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     const { robotVacuumStatus, hiddenTaskIds } = await loadRobotVacuumPreferences();
     try {
@@ -996,6 +1025,9 @@ export default function App() {
   // 確認ダイアログを出す（通常利用では目立たせない補助機能として配置）。
   const hideCurrentTask = async () => {
     if (!category || !task) return;
+    // hideTaskAndPickReplacementは非表示設定を代替タスク取得より先に保存するため、
+    // 代替取得が失敗（NoEligibleTaskError）しても「非表示にした」こと自体は成立している
+    trackTaskHidden();
     try {
       const t = await hideTaskAndPickReplacement(category.id, task.id, taskAudienceFilter);
       setTask(t);
@@ -1014,6 +1046,7 @@ export default function App() {
   const chooseRobotOwnerShortcut = async () => {
     const floorCategory = CATEGORIES.find((c) => c.id === "floor");
     if (!floorCategory) return;
+    trackRobotShortcutOpened();
     setCategory(floorCategory);
     setTaskAudienceFilter("robot_owner");
     const { hiddenTaskIds } = await loadRobotVacuumPreferences();
@@ -1052,6 +1085,9 @@ export default function App() {
     if (category && task) {
       recordTaskCompletion(category.id, category.label, task.title);
       recordTaskCompletedStat(task.id);
+      if (task.audiences?.includes("robot_owner") || task.audiences?.includes("robot_considering")) {
+        trackRobotTaskCompleted();
+      }
     }
   };
 
@@ -1063,6 +1099,9 @@ export default function App() {
     if (category && task) {
       recordTaskCompletion(category.id, category.label, task.title);
       recordTaskCompletedStat(task.id);
+      if (task.audiences?.includes("robot_owner") || task.audiences?.includes("robot_considering")) {
+        trackRobotTaskCompleted();
+      }
     }
   };
 

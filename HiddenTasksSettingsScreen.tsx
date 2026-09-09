@@ -7,6 +7,7 @@ import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { loadRobotVacuumPreferences, saveRobotVacuumPreferences, unhideTask } from './storage';
 import { RobotVacuumPreferences } from './types';
 import { findTaskById } from './taskData';
+import { trackTaskUnhidden } from './analytics';
 
 const COLORS = {
   text: '#3E3A34',
@@ -28,6 +29,7 @@ export function HiddenTasksSettingsScreen() {
     const next = unhideTask(prefs, taskId);
     setPrefs(next);
     await saveRobotVacuumPreferences(next);
+    trackTaskUnhidden();
   };
 
   return (

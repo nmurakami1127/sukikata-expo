@@ -2,7 +2,16 @@
 // ステップ2でtaskPicker.tsに属性フィルタ・重み付けを追加する前に、
 // 現状の挙動をこのテストで固定しておく。
 
+// #14：taskPicker.ts内で一元化して発火するrobot_task_shown/task_pool_fallbackの
+// 計測をテストするため、analytics.tsをモックする（taskPicker.tsとanalytics.tsは
+// 別モジュールなので、pickRobotOwnerFloorTaskのときと違いjest.mockで確実に横取りできる）。
+jest.mock('./analytics', () => ({
+  trackRobotTaskShown: jest.fn(),
+  trackTaskPoolFallback: jest.fn(),
+}));
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { trackRobotTaskShown, trackTaskPoolFallback } from './analytics';
 import {
   pickTaskForCategory,
   selectWeightedTask,
@@ -606,5 +615,60 @@ describe('recordTaskCompletedStat（タスク完了時のcompletedCount記録・
       skippedCount: 0,
       lastShownAt: null,
     });
+  });
+});
+
+// #14：計測イベント robot_task_shown / task_pool_fallback（実装指示書4章）のテスト。
+// taskPicker.ts内（pickTaskForCategory）で一元的に発火するため、ここで検証する。
+describe('計測イベント：robot_task_shown / task_pool_fallback（実装指示書4章）', () => {
+  beforeEach(async () => {
+    await AsyncStorage.clear();
+    jest.restoreAllMocks();
+    (trackRobotTaskShown as jest.Mock).mockClear();
+    (trackTaskPoolFallback as jest.Mock).mockClear();
+  });
+
+  it('選ばれたタスクのaudiencesにrobot_owner/consideringを含む場合、robot_task_shownが発火する', async () => {
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+
+    await pickTaskForCategory('floor', undefined, 'unset', [], 'robot_owner');
+
+    expect(trackRobotTaskShown).toHaveBeenCalledTimes(1);
+  });
+
+  it('通常タスク（audiencesを持たない）が選ばれた場合はrobot_task_shownが発火しない', async () => {
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+
+    await pickTaskForCategory('desk'); // desk_001はaudiencesを持たない
+
+    expect(trackRobotTaskShown).not.toHaveBeenCalled();
+  });
+
+  it('Aケース（cooldown枯渇）ではtask_pool_fallbackが"cooldown_exhausted"で発火する', async () => {
+    const historyEntries: Record<string, string> = {};
+    for (const t of TASKS.desk) historyEntries[t.id] = daysAgoString(1);
+    await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(historyEntries));
+
+    await pickTaskForCategory('desk');
+
+    expect(trackTaskPoolFallback).toHaveBeenCalledWith('cooldown_exhausted');
+  });
+
+  it('通常選択（クールダウン枯渇なし）ではtask_pool_fallbackが発火しない', async () => {
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+
+    await pickTaskForCategory('desk');
+
+    expect(trackTaskPoolFallback).not.toHaveBeenCalled();
+  });
+
+  it('Bケース（非表示枯渇）では、NoEligibleTaskErrorが投げられる前にtask_pool_fallbackが"hidden_exhausted"で発火する', async () => {
+    const allIds = TASKS.desk.map((t) => t.id);
+
+    await expect(
+      pickTaskForCategory('desk', undefined, 'unset', allIds)
+    ).rejects.toThrow(NoEligibleTaskError);
+
+    expect(trackTaskPoolFallback).toHaveBeenCalledWith('hidden_exhausted');
   });
 });

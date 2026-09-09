@@ -49,3 +49,86 @@ export function trackNotificationOpened(): void {
     // no-op
   }
 }
+
+// ---- ロボット掃除機パーソナライズ（次期リリース、実装指示書4章） ----
+// 個人を特定できる情報・タスクID・タスクタイトル・端末情報は送らない。
+
+export function trackRobotStatusSet(status: 'owner' | 'considering' | 'unset'): void {
+  try {
+    trackEvent('robot_status_set', { status });
+  } catch {
+    // no-op
+  }
+}
+
+export function trackRobotPromptShown(): void {
+  try {
+    trackEvent('robot_prompt_shown');
+  } catch {
+    // no-op
+  }
+}
+
+export function trackRobotPromptDismissed(method: 'close' | 'dismiss_permanently'): void {
+  try {
+    trackEvent('robot_prompt_dismissed', { method });
+  } catch {
+    // no-op
+  }
+}
+
+export function trackRobotTaskShown(): void {
+  try {
+    trackEvent('robot_task_shown');
+  } catch {
+    // no-op
+  }
+}
+
+export function trackRobotTaskCompleted(): void {
+  try {
+    trackEvent('robot_task_completed');
+  } catch {
+    // no-op
+  }
+}
+
+export function trackRobotTaskSkipped(): void {
+  try {
+    trackEvent('robot_task_skipped');
+  } catch {
+    // no-op
+  }
+}
+
+export function trackTaskHidden(): void {
+  try {
+    trackEvent('task_hidden');
+  } catch {
+    // no-op
+  }
+}
+
+export function trackTaskUnhidden(): void {
+  try {
+    trackEvent('task_unhidden');
+  } catch {
+    // no-op
+  }
+}
+
+export function trackRobotShortcutOpened(): void {
+  try {
+    trackEvent('robot_shortcut_opened');
+  } catch {
+    // no-op
+  }
+}
+
+export function trackTaskPoolFallback(reason: 'cooldown_exhausted' | 'hidden_exhausted'): void {
+  try {
+    trackEvent('task_pool_fallback', { reason });
+  } catch {
+    // no-op
+  }
+}

@@ -11,6 +11,7 @@ import {
   hideTask,
 } from './storage';
 import { RobotVacuumStatus, TaskStats } from './types';
+import { trackRobotTaskShown, trackTaskPoolFallback } from './analytics';
 
 /**
  * owner/considering向けタスクの重みにかける倍率（暫定値）。
@@ -238,6 +239,8 @@ export async function pickTaskForCategory(
     : categoryPool;
   const visiblePool = pool.filter((t) => !hiddenTaskIds.includes(t.id));
   if (visiblePool.length === 0) {
+    // Bケース：非表示設定による候補枯渇（実装指示書2-7・4章 task_pool_fallback）
+    trackTaskPoolFallback('hidden_exhausted');
     throw new NoEligibleTaskError(categoryId);
   }
 
@@ -259,6 +262,8 @@ export async function pickTaskForCategory(
     chosen = selectWeightedTask(eligible, robotVacuumStatus);
   } else {
     // Aケース：非表示ではない候補はあるが全件クールダウン中 → 優先順位に基づき決定的に選ぶ
+    // （実装指示書2-7・4章 task_pool_fallback）
+    trackTaskPoolFallback('cooldown_exhausted');
     let candidates = visiblePool;
     if (excludeTaskId && candidates.length > 1) {
       candidates = candidates.filter((t) => t.id !== excludeTaskId);
@@ -269,6 +274,13 @@ export async function pickTaskForCategory(
 
   await saveTaskHistory({ ...history, [chosen.id]: today });
   await recordSelectionStats(chosen.id, excludeTaskId);
+
+  // 実装指示書4章 robot_task_shown：owner/considering向けタスクを表示したとき
+  // （通常カテゴリでの重み付け選出・ショートカット経由の厳密フィルタ選出を区別せず計測する）
+  if (chosen.audiences?.includes('robot_owner') || chosen.audiences?.includes('robot_considering')) {
+    trackRobotTaskShown();
+  }
+
   return chosen;
 }
 

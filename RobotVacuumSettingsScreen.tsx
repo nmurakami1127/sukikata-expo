@@ -10,6 +10,7 @@ import {
   updateRobotVacuumStatus,
 } from './storage';
 import { RobotVacuumPreferences, RobotVacuumStatus } from './types';
+import { trackRobotStatusSet } from './analytics';
 
 const COLORS = {
   text: '#3E3A34',
@@ -38,6 +39,7 @@ export function RobotVacuumSettingsScreen() {
     const next = updateRobotVacuumStatus(prefs, status);
     setPrefs(next);
     await saveRobotVacuumPreferences(next);
+    trackRobotStatusSet(status);
   };
 
   return (
