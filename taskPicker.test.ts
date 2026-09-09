@@ -11,6 +11,7 @@ import {
   NO_ELIGIBLE_TASK_MESSAGE,
   NO_ELIGIBLE_TASK_OPTION_OTHER_PLACE,
   NO_ELIGIBLE_TASK_OPTION_REVIEW_HIDDEN,
+  pickRobotOwnerFloorTask,
 } from './taskPicker';
 import { TASKS, Task } from './taskData';
 import {
@@ -409,5 +410,130 @@ describe('NoEligibleTaskError案内文言（実装指示書9-3 B）', () => {
   it('選択肢は指示書記載の「他の場所を見る」「出さない設定を見直す」と一致する', () => {
     expect(NO_ELIGIBLE_TASK_OPTION_OTHER_PLACE).toBe('他の場所を見る');
     expect(NO_ELIGIBLE_TASK_OPTION_REVIEW_HIDDEN).toBe('出さない設定を見直す');
+  });
+});
+
+// ステップ8：ショートカット「ロボット掃除機前の5分」（実装指示書2-4）のテスト。
+// ショートカットは「床」カテゴリと同一のタスクデータをaudiences（robot_owner）で
+// 厳密フィルタしたビューを使う（除外ではなく共存、という11章の重み付けとは別の解釈。
+// 6-2「同じタスクプールを利用する」を専用導線の趣旨として厳密フィルタに読んでいる）。
+describe('pickTaskForCategory（audienceFilter・実装指示書2-4のショートカット用フィルタ）', () => {
+  beforeEach(async () => {
+    await AsyncStorage.clear();
+    jest.restoreAllMocks();
+  });
+
+  it('audienceFilter="robot_owner"指定時は共通タスク（15件）のみが候補になり、確認タスク（robot_considering専用の6件）は一切選ばれない', async () => {
+    const commonTaskIds = new Set(
+      TASKS.floor
+        .filter((t) => t.audiences?.includes('robot_owner'))
+        .map((t) => t.id)
+    );
+    const confirmOnlyTaskIds = new Set(
+      TASKS.floor
+        .filter(
+          (t) => t.audiences?.includes('robot_considering') && !t.audiences?.includes('robot_owner')
+        )
+        .map((t) => t.id)
+    );
+    expect(commonTaskIds.size).toBe(15);
+    expect(confirmOnlyTaskIds.size).toBe(6);
+
+    jest.spyOn(Math, 'random').mockImplementation(mulberry32(20260909));
+
+    for (let i = 0; i < 100; i++) {
+      await AsyncStorage.clear();
+      const chosen = await pickTaskForCategory(
+        'floor',
+        undefined,
+        'unset',
+        [],
+        'robot_owner'
+      );
+      expect(commonTaskIds.has(chosen.id)).toBe(true);
+      expect(confirmOnlyTaskIds.has(chosen.id)).toBe(false);
+    }
+  });
+
+  it('audienceFilter未指定（通常の床カテゴリ）では、これまで通り全タスクが候補になる（回帰確認）', async () => {
+    jest.spyOn(Math, 'random').mockImplementation(mulberry32(20260909));
+
+    const seenIds = new Set<string>();
+    for (let i = 0; i < 200; i++) {
+      await AsyncStorage.clear();
+      const chosen = await pickTaskForCategory('floor', undefined, 'unset', []);
+      seenIds.add(chosen.id);
+    }
+
+    // 通常タスク・共通タスク・確認専用タスクのいずれからも選ばれている
+    // （audienceFilterを渡さない限り一切絞り込まれないことの回帰確認）
+    expect(seenIds.has('floor_001')).toBe(true); // 通常の床タスク
+    const hasCommonTask = TASKS.floor.some(
+      (t) => t.audiences?.includes('robot_owner') && seenIds.has(t.id)
+    );
+    const hasConfirmOnlyTask = TASKS.floor.some(
+      (t) =>
+        t.audiences?.includes('robot_considering') &&
+        !t.audiences?.includes('robot_owner') &&
+        seenIds.has(t.id)
+    );
+    expect(hasCommonTask).toBe(true);
+    expect(hasConfirmOnlyTask).toBe(true);
+  });
+});
+
+describe('pickRobotOwnerFloorTask（ショートカット専用の薄いラッパー）', () => {
+  beforeEach(async () => {
+    await AsyncStorage.clear();
+    jest.restoreAllMocks();
+  });
+
+  // 注記：pickRobotOwnerFloorTaskはpickTaskForCategoryを同一モジュール内で直接呼んでいるため、
+  // jest.spyOnによる「正しい引数で呼ばれたか」の直接検証はできない（Babel/CommonJS変換後、
+  // モジュール内の関数呼び出しはexportsオブジェクト経由にならず、spyが素通りするため）。
+  // そのため、5つの引数それぞれが効いていることを個別に観測可能な形で検証する。
+  // ただしrobotVacuumStatus='owner'の指定は、audiences厳密フィルタ後は全候補が
+  // 既にrobot_ownerを持つため重み付けが一様に打ち消し合い、'unset'との違いが挙動として
+  // 観測できない。この引数はラッパー実装のリテラル値で担保する（コードレビュー対象）。
+
+  it('"floor"カテゴリのタスクのみを返す（categoryId="floor"の担保）', async () => {
+    jest.spyOn(Math, 'random').mockImplementation(mulberry32(1));
+    const floorIds = new Set(TASKS.floor.map((t) => t.id));
+
+    for (let i = 0; i < 30; i++) {
+      await AsyncStorage.clear();
+      const chosen = await pickRobotOwnerFloorTask();
+      expect(floorIds.has(chosen.id)).toBe(true);
+    }
+  });
+
+  it('audiencesにrobot_ownerを含むタスクのみを返す（audienceFilter="robot_owner"の担保）', async () => {
+    jest.spyOn(Math, 'random').mockImplementation(mulberry32(2));
+
+    for (let i = 0; i < 30; i++) {
+      await AsyncStorage.clear();
+      const chosen = await pickRobotOwnerFloorTask();
+      expect(chosen.audiences?.includes('robot_owner')).toBe(true);
+    }
+  });
+
+  it('excludeTaskIdを指定すると、そのタスクは返らない（excludeTaskId引数の担保）', async () => {
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+    const commonTasks = TASKS.floor.filter((t) => t.audiences?.includes('robot_owner'));
+    const target = commonTasks[0];
+
+    const chosen = await pickRobotOwnerFloorTask(target.id);
+
+    expect(chosen.id).not.toBe(target.id);
+  });
+
+  it('hiddenTaskIdsを指定すると、そのタスクは返らない（hiddenTaskIds引数の担保）', async () => {
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+    const commonTasks = TASKS.floor.filter((t) => t.audiences?.includes('robot_owner'));
+    const target = commonTasks[0];
+
+    const chosen = await pickRobotOwnerFloorTask(undefined, [target.id]);
+
+    expect(chosen.id).not.toBe(target.id);
   });
 });

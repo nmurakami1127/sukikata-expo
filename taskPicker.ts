@@ -200,14 +200,29 @@ async function recordSelectionStats(
  * 候補が非表示ではないがカテゴリ内全件クールダウン中の場合（2-7 Aケース）は、
  * 通常の重み付きランダム選択ではなく rankForCooldownFallback による決定的な優先順位選択に切り替わる
  * （最終実施日→スキップ率→表示回数の順。この分岐では robotVacuumStatus による重み付けは適用しない）。
+ *
+ * audienceFilter を指定すると、カテゴリのタスクをそのaudienceを含むものだけに厳密フィルタ
+ * してから以降の処理（cooldown・非表示除外・重み付け）を行う（実装指示書2-4のショートカット用）。
+ * 新しいタスクリストを作るのではなく、TASKS[categoryId]をその場でフィルタしたビューとして
+ * 扱うだけなので、専用データの複製は発生しない。
+ *
+ * 解釈メモ（実装指示書に明記が無いため記録）：通常の「床」カテゴリ選択ではaudiencesは
+ * 除外ではなく重み付け（11章）に使うが、このショートカット導線に限っては「同じタスクプールを
+ * 利用する」（6-2）を「robot_owner以外は出さない」という厳密フィルタとして読んでいる。
+ * 11章の「除外ではなく共存」は通常の床カテゴリ選択の挙動を指すものと解釈し、
+ * ショートカットという専用導線には別の解釈を採用している。
  */
 export async function pickTaskForCategory(
   categoryId: string,
   excludeTaskId?: string,
   robotVacuumStatus: RobotVacuumStatus = 'unset',
-  hiddenTaskIds: string[] = []
+  hiddenTaskIds: string[] = [],
+  audienceFilter?: string
 ): Promise<Task> {
-  const pool = TASKS[categoryId] ?? [];
+  const categoryPool = TASKS[categoryId] ?? [];
+  const pool = audienceFilter
+    ? categoryPool.filter((t) => t.audiences?.includes(audienceFilter))
+    : categoryPool;
   const visiblePool = pool.filter((t) => !hiddenTaskIds.includes(t.id));
   if (visiblePool.length === 0) {
     throw new NoEligibleTaskError(categoryId);
@@ -265,4 +280,17 @@ export async function hideTaskAndPickReplacement(
     nextPrefs.robotVacuumStatus,
     nextPrefs.hiddenTaskIds
   );
+}
+
+/**
+ * ショートカット「ロボット掃除機前の5分」専用の薄いラッパー（実装指示書2-4）。
+ * 「床」カテゴリと同一のタスクデータを、audiencesにrobot_ownerを含むものだけに
+ * 厳密フィルタしたビューとして参照する。専用のタスクリストは持たない
+ * （pickTaskForCategoryのaudienceFilter経由でTASKS.floorをその場でフィルタするのみ）。
+ */
+export async function pickRobotOwnerFloorTask(
+  excludeTaskId?: string,
+  hiddenTaskIds: string[] = []
+): Promise<Task> {
+  return pickTaskForCategory('floor', excludeTaskId, 'owner', hiddenTaskIds, 'robot_owner');
 }
