@@ -31,6 +31,11 @@ import {
   scheduleTimerCompletionNotification,
   cancelTimerCompletionNotification,
   loadRobotVacuumPreferences,
+  saveRobotVacuumPreferences,
+  updateRobotVacuumStatus,
+  shouldShowRobotPrompt,
+  recordFloorCategoryUse,
+  dismissRobotPrompt,
 } from "./storage";
 import { runDailyNotificationJob } from "./dailyJob";
 import { CATEGORIES, CATEGORY_STYLE } from "./taskData";
@@ -412,6 +417,41 @@ function RecommendationCard({ category, onStart, onReroll, guidance, onGuidanceP
   );
 }
 
+// ロボット掃除機利用状況の任意案内バナー（実装指示書2-2）。
+// ✕（同一セッションのみ抑制）と「今は設定しない」（30日間の永続的な抑制）は別の操作として区別する。
+function RobotVacuumPromptBanner({ onSelectStatus, onDismissPermanently, onClose }) {
+  return (
+    <View style={styles.robotPromptBanner}>
+      <TouchableOpacity onPress={onClose} style={styles.robotPromptCloseBtn} hitSlop={HIT_SLOP}>
+        <Text style={styles.robotPromptCloseText}>✕</Text>
+      </TouchableOpacity>
+      <Text style={styles.robotPromptTitle}>ロボット掃除機を使っていますか？</Text>
+      <Text style={styles.robotPromptBody}>
+        使っている場合は、床のタスクを少し合わせられます。
+      </Text>
+      <View style={styles.robotPromptOptions}>
+        <TouchableOpacity
+          onPress={() => onSelectStatus("owner")}
+          style={styles.robotPromptOptionBtn}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.robotPromptOptionText}>使っている</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => onSelectStatus("considering")}
+          style={styles.robotPromptOptionBtn}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.robotPromptOptionText}>購入を検討している</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onDismissPermanently} style={styles.robotPromptOptionBtn} activeOpacity={0.7}>
+          <Text style={styles.robotPromptOptionText}>今は設定しない</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 function CategoryScreen({
   onSelect,
   onSettingsPress,
@@ -423,6 +463,10 @@ function CategoryScreen({
   recommendGuidance,
   onGuidancePress,
   onGridLayout,
+  showRobotPrompt,
+  onSelectRobotStatus,
+  onDismissRobotPromptPermanently,
+  onCloseRobotPrompt,
 }) {
   return (
     <View style={styles.flexCol}>
@@ -441,6 +485,13 @@ function CategoryScreen({
           onReroll={onRerollRecommendation}
           guidance={recommendGuidance}
           onGuidancePress={onGuidancePress}
+        />
+      )}
+      {showRobotPrompt && (
+        <RobotVacuumPromptBanner
+          onSelectStatus={onSelectRobotStatus}
+          onDismissPermanently={onDismissRobotPromptPermanently}
+          onClose={onCloseRobotPrompt}
         />
       )}
       <View onLayout={(e) => onGridLayout(e.nativeEvent.layout.y)}>
@@ -645,6 +696,11 @@ export default function App() {
   const hiddenTasksSectionYRef = useRef(0);
   const [scrollToHiddenTasksPending, setScrollToHiddenTasksPending] = useState(false);
 
+  // ロボット掃除機利用状況の案内バナー（実装指示書2-2）。✕は同一セッションのみの
+  // 抑制なのでAsyncStorageには保存せず、このReact stateだけで管理する。
+  const [robotVacuumPrefs, setRobotVacuumPrefs] = useState(null);
+  const [robotPromptClosedThisSession, setRobotPromptClosedThisSession] = useState(false);
+
   const notify = useCallback(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
   }, []);
@@ -675,6 +731,34 @@ export default function App() {
       guidance: false,
     });
   }, [screen, lastPlaceLoaded, lastPlace]);
+
+  useEffect(() => {
+    // ホーム画面に遷移するたびに最新の設定を読み直す（設定画面から戻った直後にも反映するため）
+    if (screen !== "category") return;
+    loadRobotVacuumPreferences().then(setRobotVacuumPrefs);
+  }, [screen]);
+
+  const showRobotPrompt = robotVacuumPrefs
+    ? shouldShowRobotPrompt(robotVacuumPrefs, robotPromptClosedThisSession)
+    : false;
+
+  const selectRobotStatus = async (status) => {
+    if (!robotVacuumPrefs) return;
+    const next = updateRobotVacuumStatus(robotVacuumPrefs, status);
+    setRobotVacuumPrefs(next);
+    await saveRobotVacuumPreferences(next);
+  };
+
+  const dismissRobotPromptPermanently = async () => {
+    if (!robotVacuumPrefs) return;
+    const next = dismissRobotPrompt(robotVacuumPrefs);
+    setRobotVacuumPrefs(next);
+    await saveRobotVacuumPreferences(next);
+  };
+
+  const closeRobotPromptThisSession = () => {
+    setRobotPromptClosedThisSession(true);
+  };
 
   const rerollRecommendation = () => {
     // 関数型更新を使い、素早い連続タップでも常に最新の状態から次の候補を計算する
@@ -812,9 +896,19 @@ export default function App() {
   const chooseCategory = async (c) => {
     setCategory(c);
     // 選択のたびに最新の設定を読み直す（設定画面はApp.jsの状態を経由せず自分でstorageに保存するため）
-    const { robotVacuumStatus, hiddenTaskIds } = await loadRobotVacuumPreferences();
+    const prefs = await loadRobotVacuumPreferences();
+    // 「床」カテゴリ選択時のみバナー用カウンタを更新（unset以外は内部で無視されnextPrefsは同一参照のまま）
+    const nextPrefs = c.id === "floor" ? recordFloorCategoryUse(prefs) : prefs;
+    if (nextPrefs !== prefs) {
+      await saveRobotVacuumPreferences(nextPrefs);
+    }
     try {
-      const t = await pickTaskForCategory(c.id, undefined, robotVacuumStatus, hiddenTaskIds);
+      const t = await pickTaskForCategory(
+        c.id,
+        undefined,
+        nextPrefs.robotVacuumStatus,
+        nextPrefs.hiddenTaskIds
+      );
       setTask(t);
       setScreen("task");
     } catch (e) {
@@ -955,6 +1049,10 @@ export default function App() {
             recommendGuidance={recommendState.guidance}
             onGuidancePress={scrollToPlaceGrid}
             onGridLayout={(y) => (gridYRef.current = y)}
+            showRobotPrompt={showRobotPrompt}
+            onSelectRobotStatus={selectRobotStatus}
+            onDismissRobotPromptPermanently={dismissRobotPromptPermanently}
+            onCloseRobotPrompt={closeRobotPromptThisSession}
           />
         )}
 
@@ -1354,6 +1452,44 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 16,
   },
+
+  robotPromptBanner: {
+    backgroundColor: C.well,
+    borderWidth: 1,
+    borderColor: C.wellBorder,
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 24,
+  },
+  robotPromptCloseBtn: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    padding: 4,
+  },
+  robotPromptCloseText: { fontSize: 14, color: C.ink, opacity: 0.5 },
+  robotPromptTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: C.ink,
+    marginRight: 24,
+    marginBottom: 6,
+  },
+  robotPromptBody: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: C.ink,
+    opacity: 0.7,
+    marginBottom: 14,
+  },
+  robotPromptOptions: { gap: 8 },
+  robotPromptOptionBtn: {
+    backgroundColor: C.card,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  robotPromptOptionText: { fontSize: 14, fontWeight: "600", color: C.ink },
 
   gridHeading: {
     fontSize: 18,
