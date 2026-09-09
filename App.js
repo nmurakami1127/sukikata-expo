@@ -43,6 +43,7 @@ import {
   pickTaskForCategory,
   hideTaskAndPickReplacement,
   pickRobotOwnerFloorTask,
+  recordTaskCompletedStat,
   NoEligibleTaskError,
   NO_ELIGIBLE_TASK_MESSAGE,
   NO_ELIGIBLE_TASK_OPTION_OTHER_PLACE,
@@ -1048,7 +1049,10 @@ export default function App() {
     setScreen("complete");
     trackTaskCompleted(kind);
     recordActivityAndGetStreak().then(trackStreakDay);
-    if (category && task) recordTaskCompletion(category.id, category.label, task.title);
+    if (category && task) {
+      recordTaskCompletion(category.id, category.label, task.title);
+      recordTaskCompletedStat(task.id);
+    }
   };
 
   const goQuickComplete = () => {
@@ -1056,7 +1060,10 @@ export default function App() {
     setScreen("quick-complete");
     trackTaskCompleted("quick");
     recordActivityAndGetStreak().then(trackStreakDay);
-    if (category && task) recordTaskCompletion(category.id, category.label, task.title);
+    if (category && task) {
+      recordTaskCompletion(category.id, category.label, task.title);
+      recordTaskCompletedStat(task.id);
+    }
   };
 
   const saveMemento = async () => {

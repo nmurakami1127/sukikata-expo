@@ -144,6 +144,13 @@ function rankForCooldownFallback(
   return scored[0].task;
 }
 
+const EMPTY_STAT_ENTRY: TaskStats[string] = {
+  shownCount: 0,
+  completedCount: 0,
+  skippedCount: 0,
+  lastShownAt: null,
+};
+
 /**
  * 選択結果を暗黙の重み付け用の統計に記録する（実装指示書8-6）。
  * chosenのshownCountを+1しlastShownAtを更新。skippedTaskIdが指定されていれば
@@ -156,12 +163,7 @@ async function recordSelectionStats(
   const stats = await loadTaskStats();
   const next: TaskStats = { ...stats };
 
-  const chosenEntry = next[chosenId] ?? {
-    shownCount: 0,
-    completedCount: 0,
-    skippedCount: 0,
-    lastShownAt: null,
-  };
+  const chosenEntry = next[chosenId] ?? EMPTY_STAT_ENTRY;
   next[chosenId] = {
     ...chosenEntry,
     shownCount: chosenEntry.shownCount + 1,
@@ -169,18 +171,29 @@ async function recordSelectionStats(
   };
 
   if (skippedTaskId) {
-    const skippedEntry = next[skippedTaskId] ?? {
-      shownCount: 0,
-      completedCount: 0,
-      skippedCount: 0,
-      lastShownAt: null,
-    };
+    const skippedEntry = next[skippedTaskId] ?? EMPTY_STAT_ENTRY;
     next[skippedTaskId] = {
       ...skippedEntry,
       skippedCount: skippedEntry.skippedCount + 1,
     };
   }
 
+  await saveTaskStats(next);
+}
+
+/**
+ * タスク完了時（App.jsのgoComplete/goQuickComplete相当）に呼ぶ。指定タスクの
+ * completedCountを+1する（実装指示書8-6：表示回数・完了回数・スキップ回数のうち、
+ * これまでcompletedCountだけがどこからも記録されていなかった漏れの修正）。
+ * shownCount/skippedCountと同じ粒度（1回の完了操作につき+1）で記録する。
+ */
+export async function recordTaskCompletedStat(taskId: string): Promise<void> {
+  const stats = await loadTaskStats();
+  const entry = stats[taskId] ?? EMPTY_STAT_ENTRY;
+  const next: TaskStats = {
+    ...stats,
+    [taskId]: { ...entry, completedCount: entry.completedCount + 1 },
+  };
   await saveTaskStats(next);
 }
 

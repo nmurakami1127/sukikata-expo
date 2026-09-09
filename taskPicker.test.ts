@@ -12,6 +12,7 @@ import {
   NO_ELIGIBLE_TASK_OPTION_OTHER_PLACE,
   NO_ELIGIBLE_TASK_OPTION_REVIEW_HIDDEN,
   pickRobotOwnerFloorTask,
+  recordTaskCompletedStat,
 } from './taskPicker';
 import { TASKS, Task } from './taskData';
 import {
@@ -547,5 +548,63 @@ describe('pickRobotOwnerFloorTask（ショートカット専用の薄いラッ�
     const chosen = await pickRobotOwnerFloorTask(undefined, [target.id]);
 
     expect(chosen.id).not.toBe(target.id);
+  });
+});
+
+// #11の記録漏れ修正：タスク完了時（App.jsのgoComplete/goQuickComplete相当）に
+// completedCountを記録する（実装指示書8-6：表示回数・完了回数・スキップ回数）。
+describe('recordTaskCompletedStat（タスク完了時のcompletedCount記録・8-6の記録漏れ修正）', () => {
+  beforeEach(async () => {
+    await AsyncStorage.clear();
+    jest.restoreAllMocks();
+  });
+
+  it('タスク完了時にcompletedCountが+1される', async () => {
+    const target = TASKS.desk[0];
+
+    await recordTaskCompletedStat(target.id);
+
+    const stats = await loadTaskStats();
+    expect(stats[target.id]?.completedCount).toBe(1);
+  });
+
+  it('複数回完了すればその都度加算される（shownCount/skippedCountと同じ粒度：1回の操作につき+1）', async () => {
+    const target = TASKS.desk[0];
+
+    await recordTaskCompletedStat(target.id);
+    await recordTaskCompletedStat(target.id);
+    await recordTaskCompletedStat(target.id);
+
+    const stats = await loadTaskStats();
+    expect(stats[target.id]?.completedCount).toBe(3);
+  });
+
+  it('shownCount/skippedCountには影響しない（既存の記録済みの値を維持する）', async () => {
+    const target = TASKS.desk[0];
+    // 事前にshownCount/skippedCountが記録されている状態を用意する
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+    await pickTaskForCategory('desk'); // desk_001（target）のshownCountが1になる
+    await pickTaskForCategory('desk', target.id); // targetをexcludeTaskIdにしてskippedCountを+1
+
+    await recordTaskCompletedStat(target.id);
+
+    const stats = await loadTaskStats();
+    expect(stats[target.id]?.shownCount).toBe(1);
+    expect(stats[target.id]?.skippedCount).toBe(1);
+    expect(stats[target.id]?.completedCount).toBe(1);
+  });
+
+  it('未記録のタスクIDに対しても呼べる（新規エントリが作成される）', async () => {
+    const target = TASKS.desk[0];
+
+    await recordTaskCompletedStat(target.id);
+
+    const stats = await loadTaskStats();
+    expect(stats[target.id]).toEqual({
+      shownCount: 0,
+      completedCount: 1,
+      skippedCount: 0,
+      lastShownAt: null,
+    });
   });
 });
