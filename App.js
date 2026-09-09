@@ -42,6 +42,7 @@ import { CATEGORIES, CATEGORY_STYLE } from "./taskData";
 import {
   pickTaskForCategory,
   hideTaskAndPickReplacement,
+  pickRobotOwnerFloorTask,
   NoEligibleTaskError,
   NO_ELIGIBLE_TASK_MESSAGE,
   NO_ELIGIBLE_TASK_OPTION_OTHER_PLACE,
@@ -452,6 +453,23 @@ function RobotVacuumPromptBanner({ onSelectStatus, onDismissPermanently, onClose
   );
 }
 
+// ロボット掃除機所有者向けショートカット「ロボット掃除機前の5分」（実装指示書2-4）。
+// robotVacuumStatus === "owner" のときのみホーム画面に表示する。
+function RobotShortcutCard({ onStart }) {
+  const style = CATEGORY_STYLE.floor;
+  return (
+    <TouchableOpacity style={styles.robotShortcutCard} onPress={onStart} activeOpacity={0.85}>
+      <View style={[styles.robotShortcutIconBadge, { backgroundColor: style.bg }]}>
+        <CategoryIcon id="floor" color={style.accent} size={26} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.robotShortcutTitle}>ロボット掃除機前の5分</Text>
+        <Text style={styles.robotShortcutBody}>床のタスクを、ロボット掃除機向けに絞って出します。</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 function CategoryScreen({
   onSelect,
   onSettingsPress,
@@ -467,6 +485,8 @@ function CategoryScreen({
   onSelectRobotStatus,
   onDismissRobotPromptPermanently,
   onCloseRobotPrompt,
+  showRobotShortcut,
+  onStartRobotShortcut,
 }) {
   return (
     <View style={styles.flexCol}>
@@ -494,6 +514,7 @@ function CategoryScreen({
           onClose={onCloseRobotPrompt}
         />
       )}
+      {showRobotShortcut && <RobotShortcutCard onStart={onStartRobotShortcut} />}
       <View onLayout={(e) => onGridLayout(e.nativeEvent.layout.y)}>
         <Text style={styles.gridHeading}>または好きな場所を選ぶ</Text>
         <View style={styles.categoryGrid}>
@@ -664,6 +685,9 @@ export default function App() {
   const [screen, setScreen] = useState("category");
   const [category, setCategory] = useState(null);
   const [task, setTask] = useState(null);
+  // ショートカット「ロボット掃除機前の5分」（実装指示書2-4）経由で入った場合のみ
+  // "robot_owner" になる。reroll・「今後出さない」の代替タスク取得もこのフィルタを引き継ぐ。
+  const [taskAudienceFilter, setTaskAudienceFilter] = useState(null);
   const [beforePhoto, setBeforePhoto] = useState(null);
   const [afterPhoto, setAfterPhoto] = useState(null);
   const [quickPhoto, setQuickPhoto] = useState(null);
@@ -759,6 +783,9 @@ export default function App() {
   const closeRobotPromptThisSession = () => {
     setRobotPromptClosedThisSession(true);
   };
+
+  // ショートカット「ロボット掃除機前の5分」（実装指示書2-4）。considering/unsetには表示しない。
+  const showRobotShortcut = robotVacuumPrefs?.robotVacuumStatus === "owner";
 
   const rerollRecommendation = () => {
     // 関数型更新を使い、素早い連続タップでも常に最新の状態から次の候補を計算する
@@ -895,6 +922,8 @@ export default function App() {
 
   const chooseCategory = async (c) => {
     setCategory(c);
+    // 通常のカテゴリ選択なので、ショートカット由来のaudience絞り込みは解除する
+    setTaskAudienceFilter(null);
     // 選択のたびに最新の設定を読み直す（設定画面はApp.jsの状態を経由せず自分でstorageに保存するため）
     const prefs = await loadRobotVacuumPreferences();
     // 「床」カテゴリ選択時のみバナー用カウンタを更新（unset以外は内部で無視されnextPrefsは同一参照のまま）
@@ -944,7 +973,13 @@ export default function App() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     const { robotVacuumStatus, hiddenTaskIds } = await loadRobotVacuumPreferences();
     try {
-      const t = await pickTaskForCategory(category.id, task?.id, robotVacuumStatus, hiddenTaskIds);
+      const t = await pickTaskForCategory(
+        category.id,
+        task?.id,
+        robotVacuumStatus,
+        hiddenTaskIds,
+        taskAudienceFilter
+      );
       setTask(t);
     } catch (e) {
       if (e instanceof NoEligibleTaskError) {
@@ -961,11 +996,32 @@ export default function App() {
   const hideCurrentTask = async () => {
     if (!category || !task) return;
     try {
-      const t = await hideTaskAndPickReplacement(category.id, task.id);
+      const t = await hideTaskAndPickReplacement(category.id, task.id, taskAudienceFilter);
       setTask(t);
     } catch (e) {
       if (e instanceof NoEligibleTaskError) {
         setScreen("category");
+        showNoEligibleTaskAlert();
+        return;
+      }
+      throw e;
+    }
+  };
+
+  // ショートカット「ロボット掃除機前の5分」（実装指示書2-4）。「床」カテゴリと同じ
+  // タスクデータをaudiences=robot_ownerで絞り込んだビューを使う（専用リストは持たない）。
+  const chooseRobotOwnerShortcut = async () => {
+    const floorCategory = CATEGORIES.find((c) => c.id === "floor");
+    if (!floorCategory) return;
+    setCategory(floorCategory);
+    setTaskAudienceFilter("robot_owner");
+    const { hiddenTaskIds } = await loadRobotVacuumPreferences();
+    try {
+      const t = await pickRobotOwnerFloorTask(undefined, hiddenTaskIds);
+      setTask(t);
+      setScreen("task");
+    } catch (e) {
+      if (e instanceof NoEligibleTaskError) {
         showNoEligibleTaskAlert();
         return;
       }
@@ -1053,6 +1109,8 @@ export default function App() {
             onSelectRobotStatus={selectRobotStatus}
             onDismissRobotPromptPermanently={dismissRobotPromptPermanently}
             onCloseRobotPrompt={closeRobotPromptThisSession}
+            showRobotShortcut={showRobotShortcut}
+            onStartRobotShortcut={chooseRobotOwnerShortcut}
           />
         )}
 
@@ -1490,6 +1548,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   robotPromptOptionText: { fontSize: 14, fontWeight: "600", color: C.ink },
+
+  robotShortcutCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    backgroundColor: C.card,
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 24,
+  },
+  robotShortcutIconBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  robotShortcutTitle: { fontSize: 15, fontWeight: "700", color: C.ink, marginBottom: 2 },
+  robotShortcutBody: { fontSize: 12, lineHeight: 17, color: C.ink, opacity: 0.65 },
 
   gridHeading: {
     fontSize: 18,

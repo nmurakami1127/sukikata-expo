@@ -268,7 +268,8 @@ export async function pickTaskForCategory(
  */
 export async function hideTaskAndPickReplacement(
   categoryId: string,
-  taskIdToHide: string
+  taskIdToHide: string,
+  audienceFilter?: string
 ): Promise<Task> {
   const prefs = await loadRobotVacuumPreferences();
   const nextPrefs = hideTask(prefs, taskIdToHide);
@@ -278,7 +279,8 @@ export async function hideTaskAndPickReplacement(
     categoryId,
     taskIdToHide,
     nextPrefs.robotVacuumStatus,
-    nextPrefs.hiddenTaskIds
+    nextPrefs.hiddenTaskIds,
+    audienceFilter
   );
 }
 

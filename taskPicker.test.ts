@@ -371,6 +371,18 @@ describe('hideTaskAndPickReplacement（「今後出さない」選択後の一�
     expect(again.id).not.toBe(target.id);
   });
 
+  it('audienceFilterを指定すると、代替タスクもそのフィルタ内から選ばれる（ショートカット導線でのreroll/hideの整合性）', async () => {
+    const commonTasks = TASKS.floor.filter((t) => t.audiences?.includes('robot_owner'));
+    const target = commonTasks[0];
+    jest.spyOn(Math, 'random').mockImplementation(mulberry32(3));
+
+    for (let i = 0; i < 20; i++) {
+      await AsyncStorage.clear();
+      const replacement = await hideTaskAndPickReplacement('floor', target.id, 'robot_owner');
+      expect(replacement.audiences?.includes('robot_owner')).toBe(true);
+    }
+  });
+
   it('非表示設定はAsyncStorageに永続化される（hiddenTaskIdsに追加される）', async () => {
     const target = TASKS.desk[0];
 
