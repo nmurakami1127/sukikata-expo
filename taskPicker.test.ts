@@ -159,43 +159,149 @@ describe('selectWeightedTask（実装指示書2-3：属性フィルタの受け�
     });
   });
 
-  describe.each([
-    ['owner', 'robot_owner'] as const,
-    ['considering', 'robot_considering'] as const,
-  ])('robotVacuumStatus が %s の場合', (status, matchingAudience) => {
-    it('該当タスクの選択確率は通常タスクより高くなるが、除外ではないため0%にも100%にもならない', () => {
-      const TRIALS = 2000;
+  // 改訂版要求定義書10章：旧実装は「該当audienceのタスクを持ち上げる」方式だったが、
+  // 「ownerの場合のみB区分相当タスク（audiencesにrobot_ownerを含む）の重みを下げる。
+  // considering/unsetは一切調整しない」方式に置き換えた（実装指示書2章）。
+  describe('robotVacuumStatus が owner の場合', () => {
+    it('audiencesにrobot_ownerを含むタスク（B区分相当）は通常タスクより選ばれにくくなるが、除外ではないため0%にはならない', () => {
+      const TRIALS = 4000;
       // seedを固定し、実行のたびに同じ乱数列で判定する（flaky回避のため実際のMath.randomは使わない）
-      jest.spyOn(Math, 'random').mockImplementation(mulberry32(20260908));
+      jest.spyOn(Math, 'random').mockImplementation(mulberry32(20260916));
       const counts: Record<string, number> = {};
       for (const t of SAMPLE_POOL) counts[t.id] = 0;
 
       for (let i = 0; i < TRIALS; i++) {
-        const chosen = selectWeightedTask(SAMPLE_POOL, status);
+        const chosen = selectWeightedTask(SAMPLE_POOL, 'owner');
         counts[chosen.id] += 1;
       }
 
-      // 除外ではないこと：プール内の全タスク（属性に合わないものも含む）が最低1回は選ばれる
+      // 除外ではないこと：B区分相当タスクも最低1回は選ばれる
       for (const t of SAMPLE_POOL) {
         expect(counts[t.id]).toBeGreaterThan(0);
       }
 
-      const matchingCount = SAMPLE_POOL.filter((t) =>
-        t.audiences?.includes(matchingAudience)
+      const demotedCount = SAMPLE_POOL.filter((t) =>
+        t.audiences?.includes('robot_owner')
       ).reduce((sum, t) => sum + counts[t.id], 0);
-      const nonMatchingCount = TRIALS - matchingCount;
 
-      // 0%にならない（通常タスクも一定数選ばれ続ける = 完全に置き換わらない）
-      expect(nonMatchingCount).toBeGreaterThan(0);
-      // 100%にならない（該当タスクがプールを独占しない）
-      expect(matchingCount).toBeLessThan(TRIALS);
+      // 0%にならない（完全除外ではない）
+      expect(demotedCount).toBeGreaterThan(0);
+      // 100%にならない
+      expect(demotedCount).toBeLessThan(TRIALS);
 
-      // 重み付けが機能している：一様ランダム時の期待値（5件中2件=40%）より高い頻度で選ばれる
+      // 重み低下が機能している：一様ランダム時の期待値（5件中2件=40%）より低い頻度でしか選ばれない
       const uniformBaselineShare =
-        SAMPLE_POOL.filter((t) => t.audiences?.includes(matchingAudience)).length /
+        SAMPLE_POOL.filter((t) => t.audiences?.includes('robot_owner')).length /
         SAMPLE_POOL.length;
-      expect(matchingCount / TRIALS).toBeGreaterThan(uniformBaselineShare);
+      expect(demotedCount / TRIALS).toBeLessThan(uniformBaselineShare);
     });
+  });
+
+  describe('robotVacuumStatus が considering の場合', () => {
+    it('audiencesにrobot_consideringを含むタスクの選択確率は、ownerのような重み調整を一切受けず一様ランダムのままになる', () => {
+      const TRIALS = 4000;
+      jest.spyOn(Math, 'random').mockImplementation(mulberry32(20260916));
+      const counts: Record<string, number> = {};
+      for (const t of SAMPLE_POOL) counts[t.id] = 0;
+
+      for (let i = 0; i < TRIALS; i++) {
+        const chosen = selectWeightedTask(SAMPLE_POOL, 'considering');
+        counts[chosen.id] += 1;
+      }
+
+      const taggedCount = SAMPLE_POOL.filter((t) =>
+        t.audiences?.includes('robot_considering')
+      ).reduce((sum, t) => sum + counts[t.id], 0);
+
+      const uniformBaselineShare =
+        SAMPLE_POOL.filter((t) => t.audiences?.includes('robot_considering')).length /
+        SAMPLE_POOL.length;
+
+      // 重み調整が一切効いていないこと：一様ランダム時の期待値（40%）から大きく外れない
+      // （統計的な揺らぎのみを許容する幅として5ポイントを許容誤差とする）
+      expect(Math.abs(taggedCount / TRIALS - uniformBaselineShare)).toBeLessThan(0.05);
+    });
+
+    it('owner同一シードで比較すると、consideringの方がrobot_owner属性タスクを高い頻度で選ぶ（ownerでは重みが下がっているため）', () => {
+      const TRIALS = 4000;
+      const counts = (status: 'owner' | 'considering') => {
+        jest.spyOn(Math, 'random').mockImplementation(mulberry32(20260916));
+        const result: Record<string, number> = {};
+        for (const t of SAMPLE_POOL) result[t.id] = 0;
+        for (let i = 0; i < TRIALS; i++) {
+          const chosen = selectWeightedTask(SAMPLE_POOL, status);
+          result[chosen.id] += 1;
+        }
+        jest.restoreAllMocks();
+        return result;
+      };
+
+      const ownerCounts = counts('owner');
+      const consideringCounts = counts('considering');
+
+      const ownerDemoted = SAMPLE_POOL.filter((t) => t.audiences?.includes('robot_owner')).reduce(
+        (sum, t) => sum + ownerCounts[t.id],
+        0
+      );
+      const consideringSame = SAMPLE_POOL.filter((t) =>
+        t.audiences?.includes('robot_owner')
+      ).reduce((sum, t) => sum + consideringCounts[t.id], 0);
+
+      expect(consideringSame).toBeGreaterThan(ownerDemoted);
+    });
+  });
+});
+
+// A区分（通常タスク化済み・audiencesを持たない）を模したプール。
+// owner/consideringいずれのステータスでも、B区分相当タスク（audiences持ち）だけが調整対象になり、
+// A区分相当タスク（audiencesなし）は通常タスクと全く同じ扱いになることを確認する。
+const A_CLASS_LIKE_POOL: Task[] = [
+  { id: 'a_like_1', title: 'A区分相当タスク1', note: '', cooldownDays: 14, tags: ['robot_vacuum'] },
+  { id: 'a_like_2', title: 'A区分相当タスク2', note: '', cooldownDays: 14, tags: ['robot_vacuum'] },
+  {
+    id: 'b_like_1',
+    title: 'B区分相当タスク1',
+    note: '',
+    cooldownDays: 14,
+    audiences: ['robot_owner', 'robot_considering'],
+  },
+];
+
+describe('selectWeightedTask（A区分＝audiencesなしタスクは所有者向け調整の対象にならないこと）', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('ownerの場合、audiencesを持たないA区分相当タスク同士の選択比率は1:1のまま崩れない（個別の重み調整を受けていないことの確認）', () => {
+    // 注意：プール全体に対するA区分相当タスクの「合計選択シェア」はb_like_1が
+    // 重み低下する分だけ相対的に上がる（これは正しい挙動）。ここで確認したいのは、
+    // a_like_1とa_like_2という「audiencesを持たない者同士」の相対比が崩れていないこと
+    // （＝A区分内で個別にaudiencesベースの調整を受けていないこと）。
+    const TRIALS = 4000;
+    jest.spyOn(Math, 'random').mockImplementation(mulberry32(20260916));
+    const counts: Record<string, number> = { a_like_1: 0, a_like_2: 0, b_like_1: 0 };
+
+    for (let i = 0; i < TRIALS; i++) {
+      const chosen = selectWeightedTask(A_CLASS_LIKE_POOL, 'owner');
+      counts[chosen.id] += 1;
+    }
+
+    const ratio = counts['a_like_1'] / counts['a_like_2'];
+    expect(ratio).toBeGreaterThan(0.9);
+    expect(ratio).toBeLessThan(1.1);
+  });
+
+  it('consideringの場合、選択分布はunsetと一致する（重み調整が一切効かず、全タスクweight=1として扱われるため）', () => {
+    // considering は effectiveWeight が何も調整しないため、全タスクの重みが1で揃い、
+    // 重み付きループの挙動がunsetのpickRandomと数学的に一致する（total=pool.lengthのケース）。
+    const randomValues = [0.02, 0.2, 0.4, 0.6, 0.8, 0.95];
+    for (const r of randomValues) {
+      jest.spyOn(Math, 'random').mockReturnValue(r);
+      const unsetChosen = selectWeightedTask(A_CLASS_LIKE_POOL, 'unset');
+      const consideringChosen = selectWeightedTask(A_CLASS_LIKE_POOL, 'considering');
+      expect(consideringChosen.id).toBe(unsetChosen.id);
+      jest.restoreAllMocks();
+    }
   });
 });
 
@@ -437,29 +543,27 @@ describe('NoEligibleTaskError案内文言（実装指示書9-3 B）', () => {
 
 // ステップ8：ショートカット「ロボット掃除機前の5分」（実装指示書2-4）のテスト。
 // ショートカットは「床」カテゴリと同一のタスクデータをaudiences（robot_owner）で
-// 厳密フィルタしたビューを使う（除外ではなく共存、という11章の重み付けとは別の解釈。
-// 6-2「同じタスクプールを利用する」を専用導線の趣旨として厳密フィルタに読んでいる）。
+// 厳密フィルタしたビューを使う（除外ではなく共存、という重み付けとは別の解釈。
+// 旧実装指示書6-2「同じタスクプールを利用する」を専用導線の趣旨として厳密フィルタに読んでいる）。
+// v3（実装指示書1章）のA/B/C仕分けにより、audiencesを持つのはB区分の10件のみになった
+// （A区分5件はaudiences削除、C区分6件はTASKS.floorから独立させたため）。
 describe('pickTaskForCategory（audienceFilter・実装指示書2-4のショートカット用フィルタ）', () => {
   beforeEach(async () => {
     await AsyncStorage.clear();
     jest.restoreAllMocks();
   });
 
-  it('audienceFilter="robot_owner"指定時は共通タスク（15件）のみが候補になり、確認タスク（robot_considering専用の6件）は一切選ばれない', async () => {
-    const commonTaskIds = new Set(
+  it('audienceFilter="robot_owner"指定時はB区分タスク（10件）のみが候補になり、A区分（audiencesなし5件）は一切選ばれない', async () => {
+    const bClassTaskIds = new Set(
       TASKS.floor
         .filter((t) => t.audiences?.includes('robot_owner'))
         .map((t) => t.id)
     );
-    const confirmOnlyTaskIds = new Set(
-      TASKS.floor
-        .filter(
-          (t) => t.audiences?.includes('robot_considering') && !t.audiences?.includes('robot_owner')
-        )
-        .map((t) => t.id)
+    const aClassTaskIds = new Set(
+      TASKS.floor.filter((t) => !t.audiences).map((t) => t.id)
     );
-    expect(commonTaskIds.size).toBe(15);
-    expect(confirmOnlyTaskIds.size).toBe(6);
+    expect(bClassTaskIds.size).toBe(10);
+    expect(aClassTaskIds.size).toBeGreaterThanOrEqual(5); // A区分5件＋既存の通常床タスク
 
     jest.spyOn(Math, 'random').mockImplementation(mulberry32(20260909));
 
@@ -472,12 +576,12 @@ describe('pickTaskForCategory（audienceFilter・実装指示書2-4のショー�
         [],
         'robot_owner'
       );
-      expect(commonTaskIds.has(chosen.id)).toBe(true);
-      expect(confirmOnlyTaskIds.has(chosen.id)).toBe(false);
+      expect(bClassTaskIds.has(chosen.id)).toBe(true);
+      expect(aClassTaskIds.has(chosen.id)).toBe(false);
     }
   });
 
-  it('audienceFilter未指定（通常の床カテゴリ）では、これまで通り全タスクが候補になる（回帰確認）', async () => {
+  it('audienceFilter未指定（通常の床カテゴリ）では、これまで通りA/B区分タスクが候補になる（回帰確認）', async () => {
     jest.spyOn(Math, 'random').mockImplementation(mulberry32(20260909));
 
     const seenIds = new Set<string>();
@@ -487,20 +591,29 @@ describe('pickTaskForCategory（audienceFilter・実装指示書2-4のショー�
       seenIds.add(chosen.id);
     }
 
-    // 通常タスク・共通タスク・確認専用タスクのいずれからも選ばれている
+    // 通常タスク・B区分タスクのいずれからも選ばれている
     // （audienceFilterを渡さない限り一切絞り込まれないことの回帰確認）
     expect(seenIds.has('floor_001')).toBe(true); // 通常の床タスク
-    const hasCommonTask = TASKS.floor.some(
+    expect(seenIds.has('floor_robot_001')).toBe(true); // A区分（audiencesなし）
+    const hasBClassTask = TASKS.floor.some(
       (t) => t.audiences?.includes('robot_owner') && seenIds.has(t.id)
     );
-    const hasConfirmOnlyTask = TASKS.floor.some(
-      (t) =>
-        t.audiences?.includes('robot_considering') &&
-        !t.audiences?.includes('robot_owner') &&
-        seenIds.has(t.id)
-    );
-    expect(hasCommonTask).toBe(true);
-    expect(hasConfirmOnlyTask).toBe(true);
+    expect(hasBClassTask).toBe(true);
+  });
+
+  it('C区分（迎える前チェック用6件）はTASKS.floorに存在しないため、通常の床カテゴリ選択では一切候補にならない', async () => {
+    jest.spyOn(Math, 'random').mockImplementation(mulberry32(20260909));
+
+    const seenIds = new Set<string>();
+    for (let i = 0; i < 200; i++) {
+      await AsyncStorage.clear();
+      const chosen = await pickTaskForCategory('floor', undefined, 'unset', []);
+      seenIds.add(chosen.id);
+    }
+
+    for (const id of ['floor_robot_016', 'floor_robot_017', 'floor_robot_018', 'floor_robot_019', 'floor_robot_020', 'floor_robot_021']) {
+      expect(seenIds.has(id)).toBe(false);
+    }
   });
 });
 

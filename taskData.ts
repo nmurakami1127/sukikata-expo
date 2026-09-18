@@ -56,15 +56,28 @@ export const TASKS: Record<string, Task[]> = {
     { id: 'floor_002', title: '見える範囲のゴミ・紙くずを拾う', note: '3分タイマー推奨', cooldownDays: 14 },
     { id: 'floor_003', title: '床にあるものを3つだけ、本来の場所に戻す', note: '数を区切ることで完了しやすくする', cooldownDays: 14 },
     { id: 'floor_004', title: '床の一角（1畳分）だけ何もない状態にする', note: '全体ではなく範囲を限定', cooldownDays: 14 },
-    // ここから：ロボット掃除機所有者・購入検討者の共通タスク（実装指示書3-1、15件）。
-    // 通常の「床」カテゴリ内で共用し、専用に複製したタスクリストは持たない。
+    // ここから：ロボット掃除機関連タスク（改訂版要求定義書5章、実装指示書1章の仕分け結果）。
+    // 初版で「所有者・購入検討者の共通タスク（実装指示書3-1、15件）」としていたものを、
+    // 実利用検証を踏まえてA/B区分に再仕分けした（判定根拠：
+    // docs/requirements/robot-vacuum-task-classification-review.md）。判断基準は
+    // 「個数指定の有無」ではなく「ロボット掃除機を使わない通常の片付け場面でも、そのタスク単体に
+    // 意味があるか」。
+    //   A区分（5件）：日常的な片付けとして単体で意味があるため通常タスク化する。audiencesは
+    //     持たせない（省略時は"all"扱い）＝所有者向けの重み調整の対象にもしない。tagsは
+    //     分析・コンテンツ分類目的でそのまま残す（「意味情報」と「提示ロジック」の分離）。
+    //   B区分（10件）：「〇〇を3つだけ」等、ロボット掃除機を使う直前の一括片付け行動とは
+    //     合わない細分化タスク。audiencesはこれまでどおり維持し（データ構造は変更しない）、
+    //     重み調整はtaskPicker.ts側のロジックで行う：robotVacuumStatus === "owner" のときのみ
+    //     ROBOT_OWNER_DEMOTION_MULTIPLIERで重みを下げる。considering/unsetには一切影響しない。
+    // 購入検討者向け確認タスク6件（旧floor_robot_016〜021、C区分）は「迎える前チェック」の
+    // 独立フロー専用データとして本カテゴリから移設した（ROBOT_CHECK_TASKS、本ファイル末尾）。
     {
       id: 'floor_robot_001',
       title: '床にある服を1着だけ戻す',
       note: '全部ではなく1着だけでOK',
       cooldownDays: 14,
       tags: ['robot_vacuum', 'clothes', 'low_decision'],
-      audiences: ['robot_owner', 'robot_considering'],
+      // A区分：通常タスク化（audiencesなし）
     },
     {
       id: 'floor_robot_002',
@@ -72,7 +85,7 @@ export const TASKS: Record<string, Task[]> = {
       note: '数を区切ることで完了しやすくする',
       cooldownDays: 14,
       tags: ['robot_vacuum', 'low_decision'],
-      audiences: ['robot_owner', 'robot_considering'],
+      audiences: ['robot_owner', 'robot_considering'], // B区分：所有者は重み低下対象
     },
     {
       id: 'floor_robot_003',
@@ -80,7 +93,7 @@ export const TASKS: Record<string, Task[]> = {
       note: 'つまずき防止に。1か所だけでOK',
       cooldownDays: 14,
       tags: ['robot_vacuum', 'cables'],
-      audiences: ['robot_owner', 'robot_considering'],
+      // A区分：通常タスク化（audiencesなし）
     },
     {
       id: 'floor_robot_004',
@@ -88,7 +101,7 @@ export const TASKS: Record<string, Task[]> = {
       note: '複数あっても1つだけでOK',
       cooldownDays: 14,
       tags: ['robot_vacuum', 'low_decision'],
-      audiences: ['robot_owner', 'robot_considering'],
+      // A区分：通常タスク化（audiencesなし）
     },
     {
       id: 'floor_robot_005',
@@ -96,7 +109,7 @@ export const TASKS: Record<string, Task[]> = {
       note: '3つ拾ったら終わりでOK',
       cooldownDays: 14,
       tags: ['robot_vacuum', 'low_decision'],
-      audiences: ['robot_owner', 'robot_considering'],
+      audiences: ['robot_owner', 'robot_considering'], // B区分：所有者は重み低下対象
     },
     {
       id: 'floor_robot_006',
@@ -104,7 +117,7 @@ export const TASKS: Record<string, Task[]> = {
       note: '椅子1脚分だけに限定',
       cooldownDays: 14,
       tags: ['robot_vacuum', 'low_decision'],
-      audiences: ['robot_owner', 'robot_considering'],
+      audiences: ['robot_owner', 'robot_considering'], // B区分：所有者は重み低下対象
     },
     {
       id: 'floor_robot_007',
@@ -112,7 +125,7 @@ export const TASKS: Record<string, Task[]> = {
       note: 'よく通る道を1本だけ',
       cooldownDays: 14,
       tags: ['robot_vacuum', 'low_decision'],
-      audiences: ['robot_owner', 'robot_considering'],
+      // A区分：通常タスク化（audiencesなし）
     },
     {
       id: 'floor_robot_008',
@@ -120,7 +133,7 @@ export const TASKS: Record<string, Task[]> = {
       note: 'カーテンやタオルなど、1か所だけ',
       cooldownDays: 14,
       tags: ['robot_vacuum', 'low_decision'],
-      audiences: ['robot_owner', 'robot_considering'],
+      audiences: ['robot_owner', 'robot_considering'], // B区分：所有者は重み低下対象
     },
     {
       id: 'floor_robot_009',
@@ -128,7 +141,7 @@ export const TASKS: Record<string, Task[]> = {
       note: '3つまとめたら終わりでOK',
       cooldownDays: 14,
       tags: ['robot_vacuum', 'pet'],
-      audiences: ['robot_owner', 'robot_considering'],
+      audiences: ['robot_owner', 'robot_considering'], // B区分：所有者は重み低下対象
     },
     {
       id: 'floor_robot_010',
@@ -136,7 +149,7 @@ export const TASKS: Record<string, Task[]> = {
       note: '全体ではなく一角に限定',
       cooldownDays: 14,
       tags: ['robot_vacuum', 'low_decision'],
-      audiences: ['robot_owner', 'robot_considering'],
+      audiences: ['robot_owner', 'robot_considering'], // B区分：所有者は重み低下対象
     },
     {
       id: 'floor_robot_011',
@@ -144,7 +157,7 @@ export const TASKS: Record<string, Task[]> = {
       note: '仕分けはせず、集めるだけ',
       cooldownDays: 14,
       tags: ['robot_vacuum', 'paper'],
-      audiences: ['robot_owner', 'robot_considering'],
+      audiences: ['robot_owner', 'robot_considering'], // B区分：所有者は重み低下対象
     },
     {
       id: 'floor_robot_012',
@@ -152,7 +165,7 @@ export const TASKS: Record<string, Task[]> = {
       note: '1組だけでOK',
       cooldownDays: 14,
       tags: ['robot_vacuum', 'low_decision'],
-      audiences: ['robot_owner', 'robot_considering'],
+      audiences: ['robot_owner', 'robot_considering'], // B区分：所有者は重み低下対象
     },
     {
       id: 'floor_robot_013',
@@ -160,7 +173,7 @@ export const TASKS: Record<string, Task[]> = {
       note: 'コードの上にあるものを3つだけ',
       cooldownDays: 14,
       tags: ['robot_vacuum', 'cables'],
-      audiences: ['robot_owner', 'robot_considering'],
+      // A区分：通常タスク化（audiencesなし）
     },
     {
       id: 'floor_robot_014',
@@ -168,7 +181,7 @@ export const TASKS: Record<string, Task[]> = {
       note: '少しだけでOK、全体を片付けなくていい',
       cooldownDays: 14,
       tags: ['robot_vacuum', 'low_decision'],
-      audiences: ['robot_owner', 'robot_considering'],
+      audiences: ['robot_owner', 'robot_considering'], // B区分：所有者は重み低下対象
     },
     {
       id: 'floor_robot_015',
@@ -176,58 +189,7 @@ export const TASKS: Record<string, Task[]> = {
       note: '3つ移動したら終わりでOK',
       cooldownDays: 14,
       tags: ['robot_vacuum', 'low_decision'],
-      audiences: ['robot_owner', 'robot_considering'],
-    },
-    // ここから：購入検討者向け確認タスク（実装指示書3-2、6件）。
-    // 「使える／使えない」を判定するタスクではなく、生活環境に気づくための確認タスク。
-    // audiencesはrobot_consideringのみ（所有者には出さない）。
-    {
-      id: 'floor_robot_016',
-      title: 'ロボット掃除機が通りそうな場所のコードを1か所確認する',
-      note: '確認するだけでOK、片付けなくてもよい',
-      cooldownDays: 14,
-      tags: ['robot_vacuum'],
-      audiences: ['robot_considering'],
-    },
-    {
-      id: 'floor_robot_017',
-      title: '床によく置いているものを1つだけ確認する',
-      note: '気になるものを1つ見てみるだけ',
-      cooldownDays: 14,
-      tags: ['robot_vacuum'],
-      audiences: ['robot_considering'],
-    },
-    {
-      id: 'floor_robot_018',
-      title: '段差やマットのある場所を1か所確認する',
-      note: '1か所だけ確認すればOK',
-      cooldownDays: 14,
-      tags: ['robot_vacuum'],
-      audiences: ['robot_considering'],
-    },
-    {
-      id: 'floor_robot_019',
-      title: 'ロボット掃除機を置けそうな場所を1か所確認する',
-      note: '置き場所を1か所考えてみるだけ',
-      cooldownDays: 14,
-      tags: ['robot_vacuum'],
-      audiences: ['robot_considering'],
-    },
-    {
-      id: 'floor_robot_020',
-      title: '床まで垂れているカーテンや布を1か所確認する',
-      note: '1か所だけ見てみるだけでOK',
-      cooldownDays: 14,
-      tags: ['robot_vacuum'],
-      audiences: ['robot_considering'],
-    },
-    {
-      id: 'floor_robot_021',
-      title: 'よく物が集まる床の一角を1か所確認する',
-      note: '1か所だけ確認するだけでOK',
-      cooldownDays: 14,
-      tags: ['robot_vacuum'],
-      audiences: ['robot_considering'],
+      audiences: ['robot_owner', 'robot_considering'], // B区分：所有者は重み低下対象
     },
   ],
   shelf: [
@@ -267,11 +229,77 @@ export const TASKS: Record<string, Task[]> = {
   ],
 };
 
-/** カテゴリをまたいでIDからタスクを探す（「出さない設定にしたタスク」一覧のタイトル解決に使用） */
+/**
+ * 購入検討者向け「迎える前チェック」専用タスク（改訂版要求定義書8章、実装指示書3章）。
+ * 旧floor_robot_016〜021（C区分）を、通常の「床」カテゴリのタスクプールから独立させたもの。
+ * TASKSには含めないため、pickTaskForCategory等の通常のタスク選択ロジック・cooldown・
+ * hiddenTaskIds・taskStatsの対象には一切ならない（「通常のタスク記録と完全分離」の要求）。
+ * 「迎える前チェック」フロー実装時にこの配列を直接参照する想定。記録方式は
+ * taskStatsを共用せず専用の記録先を持つ設計とし、計測は専用イベント
+ * robot_check_started/robot_check_item_checked/robot_check_completedで行う
+ * （詳細はdocs/implementation/implementation-brief-robot-vacuum-personalization.md 3章）。
+ */
+export const ROBOT_CHECK_TASKS: Task[] = [
+  {
+    id: 'floor_robot_016',
+    title: 'ロボット掃除機が通りそうな場所のコードを1か所確認する',
+    note: '確認するだけでOK、片付けなくてもよい',
+    cooldownDays: 14,
+    tags: ['robot_vacuum'],
+    audiences: ['robot_considering'],
+  },
+  {
+    id: 'floor_robot_017',
+    title: '床によく置いているものを1つだけ確認する',
+    note: '気になるものを1つ見てみるだけ',
+    cooldownDays: 14,
+    tags: ['robot_vacuum'],
+    audiences: ['robot_considering'],
+  },
+  {
+    id: 'floor_robot_018',
+    title: '段差やマットのある場所を1か所確認する',
+    note: '1か所だけ確認すればOK',
+    cooldownDays: 14,
+    tags: ['robot_vacuum'],
+    audiences: ['robot_considering'],
+  },
+  {
+    id: 'floor_robot_019',
+    title: 'ロボット掃除機を置けそうな場所を1か所確認する',
+    note: '置き場所を1か所考えてみるだけ',
+    cooldownDays: 14,
+    tags: ['robot_vacuum'],
+    audiences: ['robot_considering'],
+  },
+  {
+    id: 'floor_robot_020',
+    title: '床まで垂れているカーテンや布を1か所確認する',
+    note: '1か所だけ見てみるだけでOK',
+    cooldownDays: 14,
+    tags: ['robot_vacuum'],
+    audiences: ['robot_considering'],
+  },
+  {
+    id: 'floor_robot_021',
+    title: 'よく物が集まる床の一角を1か所確認する',
+    note: '1か所だけ確認するだけでOK',
+    cooldownDays: 14,
+    tags: ['robot_vacuum'],
+    audiences: ['robot_considering'],
+  },
+];
+
+/**
+ * カテゴリをまたいでIDからタスクを探す（「出さない設定にしたタスク」一覧のタイトル解決に使用）。
+ * ROBOT_CHECK_TASKS（TASKSには含まれない）も検索対象に含める。これは「迎える前チェック」を
+ * 独立フロー化する前に floor_robot_016〜021 を「今後出さない」設定していたユーザーがいた場合でも、
+ * 非表示タスク一覧でタイトルが解決できなくなる回帰を防ぐため。
+ */
 export function findTaskById(taskId: string): Task | undefined {
   for (const pool of Object.values(TASKS)) {
     const found = pool.find((t) => t.id === taskId);
     if (found) return found;
   }
-  return undefined;
+  return ROBOT_CHECK_TASKS.find((t) => t.id === taskId);
 }

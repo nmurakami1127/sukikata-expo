@@ -14,11 +14,19 @@ import { RobotVacuumStatus, TaskStats } from './types';
 import { trackRobotTaskShown, trackTaskPoolFallback } from './analytics';
 
 /**
- * owner/considering向けタスクの重みにかける倍率（暫定値）。
- * 「除外はしないが優先度を上げる」の度合いを決める定数で、実装指示書7章の
- * 要確認事項には明記が無いためPM確認前提の暫定値としてここに定数化する。
+ * ロボット掃除機所有者に対して、床タスクのうちB区分タスク（実装指示書1章・
+ * docs/requirements/robot-vacuum-task-classification-review.md参照。「〇〇を3つだけ」等、
+ * 一括片付け行動とは合わない細分化タスク）の重みにかける倍率（暫定値0.5）。
+ *
+ * 改訂版要求定義書10章により、旧実装の「robot_owner属性のタスクを持ち上げる」方式
+ * （旧ROBOT_AUDIENCE_WEIGHT_MULTIPLIER）は廃止し、「相性の悪いタスクの重みを下げる」
+ * 方式に置き換えた。完全に除外するのではなく、他に通常タスクの候補がある場合に相対的に
+ * 出にくくなる程度の調整とするため、1未満の倍率をtaskPicker.tsにハードコードせず
+ * 独立した定数として切り出している（値の意図・調整方法は実装指示書2章を参照）。
+ *
+ * considering・unsetのユーザーには一切適用しない（3-1参照）。
  */
-export const ROBOT_AUDIENCE_WEIGHT_MULTIPLIER = 3;
+export const ROBOT_OWNER_DEMOTION_MULTIPLIER = 0.5;
 
 const HISTORY_KEY = 'sukikata:taskHistory';
 
@@ -70,18 +78,16 @@ export const NO_ELIGIBLE_TASK_MESSAGE = '今出せるタスクが少なくなっ
 export const NO_ELIGIBLE_TASK_OPTION_OTHER_PLACE = '他の場所を見る';
 export const NO_ELIGIBLE_TASK_OPTION_REVIEW_HIDDEN = '出さない設定を見直す';
 
-/** ユーザー属性から、優先すべきaudience値を返す。unsetの場合はnull（フィルタなし） */
-function audienceForStatus(
-  status: RobotVacuumStatus
-): 'robot_owner' | 'robot_considering' | null {
-  if (status === 'owner') return 'robot_owner';
-  if (status === 'considering') return 'robot_considering';
-  return null;
-}
-
-function effectiveWeight(task: Task, audience: 'robot_owner' | 'robot_considering'): number {
+/**
+ * ロボット掃除機所有者に対してのみ、B区分タスク（audiencesにrobot_ownerを含むタスク。
+ * A区分は通常タスク化済みでaudiencesを持たない）の重みを下げる。considering/unsetは
+ * task.weightをそのまま使う「通常の重み」とし、ロボット掃除機属性による調整は一切行わない。
+ */
+function effectiveWeight(task: Task, robotVacuumStatus: RobotVacuumStatus): number {
   const base = task.weight ?? 1;
-  if (task.audiences?.includes(audience)) return base * ROBOT_AUDIENCE_WEIGHT_MULTIPLIER;
+  if (robotVacuumStatus === 'owner' && task.audiences?.includes('robot_owner')) {
+    return base * ROBOT_OWNER_DEMOTION_MULTIPLIER;
+  }
   return base;
 }
 
@@ -90,17 +96,20 @@ function effectiveWeight(task: Task, audience: 'robot_owner' | 'robot_considerin
  *
  * robotVacuumStatus が 'unset' の場合は既存MVPと完全に同じ一様ランダム選択を行う
  * （audiences/weightは一切参照しない。実装指示書2-3の受け入れ条件「unsetユーザーの
- * 出力分布は現行MVPと変わらない」に対応）。
+ * 出力分布は現行MVPと変わらない」に対応。改訂版要求でもこの回帰要件は維持）。
  *
- * 'owner'/'considering' の場合、該当audienceを持つタスクの重みを
- * ROBOT_AUDIENCE_WEIGHT_MULTIPLIER倍にした重み付きランダム選択を行う。
- * 除外ではないため、非該当タスクも通常タスクとして選ばれ続ける。
+ * 'considering' の場合はtask.weightを尊重した通常の重み付きランダム選択を行うが、
+ * ロボット掃除機属性による重み調整（持ち上げ・下げのいずれも）は行わない
+ * （改訂版要求定義書：B区分は「所有者のみ優先度を下げる、considering/unsetは触らない」）。
+ *
+ * 'owner' の場合、B区分タスク（audiencesにrobot_ownerを含む）の重みを
+ * ROBOT_OWNER_DEMOTION_MULTIPLIER倍に下げた重み付きランダム選択を行う。
+ * 完全な除外ではないため、他に候補がなければB区分タスクも選ばれうる。
  */
 export function selectWeightedTask(pool: Task[], robotVacuumStatus: RobotVacuumStatus): Task {
-  const audience = audienceForStatus(robotVacuumStatus);
-  if (!audience) return pickRandom(pool);
+  if (robotVacuumStatus === 'unset') return pickRandom(pool);
 
-  const weights = pool.map((t) => effectiveWeight(t, audience));
+  const weights = pool.map((t) => effectiveWeight(t, robotVacuumStatus));
   const total = weights.reduce((sum, w) => sum + w, 0);
 
   let r = Math.random() * total;
@@ -221,10 +230,14 @@ export async function recordTaskCompletedStat(taskId: string): Promise<void> {
  * 扱うだけなので、専用データの複製は発生しない。
  *
  * 解釈メモ（実装指示書に明記が無いため記録）：通常の「床」カテゴリ選択ではaudiencesは
- * 除外ではなく重み付け（11章）に使うが、このショートカット導線に限っては「同じタスクプールを
- * 利用する」（6-2）を「robot_owner以外は出さない」という厳密フィルタとして読んでいる。
- * 11章の「除外ではなく共存」は通常の床カテゴリ選択の挙動を指すものと解釈し、
- * ショートカットという専用導線には別の解釈を採用している。
+ * 除外ではなく重み付けに使うが、このショートカット導線に限っては「同じタスクプールを
+ * 利用する」（旧実装指示書6-2）を「robot_owner以外は出さない」という厳密フィルタとして読んでいる。
+ * 通常の床カテゴリ選択の「除外ではなく共存」とは別の解釈を、ショートカットという専用導線には
+ * 採用している。
+ *
+ * 改訂版要求（App.js:815でshowRobotShortcut=falseにより導線自体を非表示化）により、
+ * このaudienceFilter経路は当面実質的に呼ばれなくなるが、コードは削除しない方針のため
+ * 動作自体はそのまま維持する。
  */
 export async function pickTaskForCategory(
   categoryId: string,

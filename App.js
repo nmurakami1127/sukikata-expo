@@ -811,8 +811,10 @@ export default function App() {
     trackRobotPromptDismissed("close");
   };
 
-  // ショートカット「ロボット掃除機前の5分」（実装指示書2-4）。considering/unsetには表示しない。
-  const showRobotShortcut = robotVacuumPrefs?.robotVacuumStatus === "owner";
+  // ショートカット「ロボット掃除機前の5分」（実装指示書2-4）。
+  // 改訂版要求定義書6章により、今回のリリースでは常時非表示とする（コードは削除しない）。
+  // 後継機能（一括行動向け簡易モード等）を検討する際は、この1行を再度条件式に戻す。
+  const showRobotShortcut = false;
 
   const rerollRecommendation = () => {
     // 関数型更新を使い、素早い連続タップでも常に最新の状態から次の候補を計算する
